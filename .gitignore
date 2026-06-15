@@ -34,6 +34,9 @@ datos__generales.txt
 # configuración local de Claude Code
 .claude/settings.local.json
 
+# material de trabajo / contenido fuente (no versionar)
+docs/
+
 # vercel
 .vercel
 
