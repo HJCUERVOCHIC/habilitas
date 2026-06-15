@@ -1,0 +1,89 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Habilitas — Design System v1.0
+ * Tokens de HABILITAS-STACK.md §6. Las variables --teal, --charcoal, etc. quedan
+ * disponibles para CSS crudo; las clases utilitarias salen de tailwind.config.js.
+ * Los tokens semánticos de shadcn van en formato HSL "H S% L%" (sin hsl()).
+ */
+@layer base {
+  :root {
+    /* Primario de marca */
+    --teal: #0a6e6e;
+    --teal-light: #0e8f8f;
+    --teal-mid: #c2e8e8;
+    --teal-pale: #e6f5f5;
+
+    /* Neutros oscuros */
+    --charcoal: #1a2a2a;
+    --slate: #3d5454;
+
+    /* Neutros claros */
+    --mist: #f2f8f8;
+    --sand: #f7f3ee;
+    --white: #ffffff;
+    --border-color: #d4e4e4;
+
+    /* Textos */
+    --text-main: #1a2a2a;
+    --text-soft: #5a7070;
+    --text-muted: #8aacac;
+
+    /* Acento */
+    --amber: #c8833a;
+    --amber-pale: #fdf0e3;
+
+    /* Semánticos */
+    --green-ok: #1a7a4a;
+    --green-pale: #e4f5ec;
+    --red-err: #c0392b;
+    --red-pale: #fde8e8;
+
+    /* Radios */
+    --radius: 12px;
+    --radius-lg: 20px;
+
+    /* --- Tokens semánticos shadcn mapeados a Habilitas (HSL) --- */
+    --background: 0 0% 100%; /* white */
+    --foreground: 180 23% 13%; /* charcoal */
+    --card: 0 0% 100%;
+    --card-foreground: 180 23% 13%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 180 23% 13%;
+    --primary: 180 83% 24%; /* teal */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 180 38% 96%; /* mist */
+    --secondary-foreground: 180 23% 13%;
+    --muted: 180 38% 96%;
+    --muted-foreground: 180 11% 40%; /* text-soft */
+    --accent: 180 42% 93%; /* teal-pale */
+    --accent-foreground: 180 83% 24%;
+    --destructive: 6 63% 46%; /* red-err */
+    --destructive-foreground: 0 0% 100%;
+    --border: 180 23% 86%; /* #D4E4E4 */
+    --input: 180 23% 86%;
+    --ring: 180 83% 24%; /* teal */
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-white font-sans text-ink-main antialiased;
+  }
+}
+
+@layer components {
+  /*
+   * ⚠️ REGLA CRÍTICA (HABILITAS-STACK.md §6): el gradiente teal se usa
+   * EXCLUSIVAMENTE en el header del documento de certificado (cert-doc-header).
+   * Nunca en navbars, modales, CTA banners, heroes ni topbars.
+   */
+  .gradient-cert-header {
+    background: linear-gradient(135deg, #0a6e6e 0%, #0a5050 100%);
+  }
+}

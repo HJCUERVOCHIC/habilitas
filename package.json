@@ -1,0 +1,51 @@
+{
+  "name": "habilitas",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "type-check": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "db:apply": "node --env-file=.env.local scripts/apply-migration.mjs",
+    "db:verify": "node --env-file=.env.local scripts/verify-db.mjs",
+    "db:seed": "node --env-file=.env.local scripts/seed.mjs",
+    "db:types": "node --env-file=.env.local scripts/gen-types.mjs",
+    "auth:link": "node --env-file=.env.local scripts/test-auth.mjs",
+    "admin:grant": "node --env-file=.env.local scripts/set-role.mjs"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1068.0",
+    "@aws-sdk/s3-request-presigner": "^3.1068.0",
+    "@radix-ui/react-slot": "^1.2.5",
+    "@supabase/ssr": "^0.12.0",
+    "@supabase/supabase-js": "^2.108.1",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lucide-react": "^1.18.0",
+    "next": "14.2.35",
+    "qrcode": "^1.5.4",
+    "react": "^18",
+    "react-dom": "^18",
+    "react-markdown": "^10.1.0",
+    "tailwind-merge": "^2.6.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "@types/pg": "^8.20.0",
+    "@types/qrcode": "^1.5.6",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "eslint": "^8",
+    "eslint-config-next": "14.2.35",
+    "pg": "^8.21.0",
+    "postcss": "^8",
+    "tailwindcss": "^3.4.1",
+    "tailwindcss-animate": "^1.0.7",
+    "typescript": "^5",
+    "vitest": "^4.1.8"
+  }
+}
