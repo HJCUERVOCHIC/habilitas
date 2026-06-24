@@ -21,8 +21,8 @@ export async function GET(request: NextRequest) {
   const tokenHash = searchParams.get('token_hash')
   const type = searchParams.get('type') as EmailOtpType | null
 
-  const redirectParam = searchParams.get('redirect') ?? searchParams.get('next') ?? '/perfil'
-  const next = redirectParam.startsWith('/') ? redirectParam : '/perfil'
+  const redirectParam = searchParams.get('redirect') ?? searchParams.get('next') ?? '/dashboard'
+  const next = redirectParam.startsWith('/') ? redirectParam : '/dashboard'
 
   // Acumula las cookies que Supabase quiera escribir para adjuntarlas a la
   // respuesta final (sea éxito o error).

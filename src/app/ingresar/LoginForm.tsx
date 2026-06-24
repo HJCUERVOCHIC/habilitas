@@ -11,7 +11,7 @@ type Status = 'idle' | 'sending' | 'sent' | 'error'
 /** Formulario de ingreso por Magic Link (HABILITAS-ESPECIFICACION §5.9). */
 export function LoginForm() {
   const searchParams = useSearchParams()
-  const redirect = searchParams.get('redirect') ?? '/perfil'
+  const redirect = searchParams.get('redirect') ?? '/dashboard'
 
   const [email, setEmail] = useState('')
   const [status, setStatus] = useState<Status>('idle')
@@ -23,7 +23,7 @@ export function LoginForm() {
     setMessage('')
 
     const supabase = createClient()
-    const safeRedirect = redirect.startsWith('/') ? redirect : '/perfil'
+    const safeRedirect = redirect.startsWith('/') ? redirect : '/dashboard'
     const emailRedirectTo = `${window.location.origin}/auth/confirm?redirect=${encodeURIComponent(
       safeRedirect,
     )}`

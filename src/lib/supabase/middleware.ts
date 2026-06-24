@@ -4,7 +4,7 @@ import { NextResponse, type NextRequest } from 'next/server'
 import type { Database } from '@/types/database'
 
 /** Rutas que requieren sesión (HABILITAS-ESPECIFICACION §5.9 RF-9.3). */
-const PROTECTED_PREFIXES = ['/curso', '/perfil', '/admin']
+const PROTECTED_PREFIXES = ['/curso', '/perfil', '/admin', '/dashboard', '/mis-cursos']
 
 function isProtected(pathname: string): boolean {
   return PROTECTED_PREFIXES.some(

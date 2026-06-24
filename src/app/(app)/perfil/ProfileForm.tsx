@@ -3,8 +3,9 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 
-import { updateProfile, type ProfileInput } from '@/app/perfil/actions'
 import { Button } from '@/components/ui/Button'
+
+import { updateProfile, type ProfileInput } from './actions'
 
 type Status = 'idle' | 'saving' | 'saved' | 'error'
 
