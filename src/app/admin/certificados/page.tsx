@@ -1,4 +1,7 @@
+import Link from 'next/link'
+
 import { CertAdminTable, type AdminCert } from '@/components/admin/CertAdminTable'
+import { Button } from '@/components/ui/Button'
 import { createAdminClient } from '@/lib/supabase/admin'
 
 export const dynamic = 'force-dynamic'
@@ -27,7 +30,14 @@ export default async function AdminCertificadosPage() {
 
   return (
     <div>
-      <h1 className="mb-6 font-display text-display-md text-charcoal">Constancias emitidas</h1>
+      <div className="mb-6 flex items-center justify-between gap-4">
+        <h1 className="font-display text-display-md text-charcoal">Constancias emitidas</h1>
+        <Button asChild variant="ghost" size="sm">
+          <Link href="/admin/certificados/export" prefetch={false}>
+            Exportar CSV
+          </Link>
+        </Button>
+      </div>
       <CertAdminTable certs={rows} />
     </div>
   )
