@@ -382,6 +382,7 @@ export type Database = {
           instructor_name: string | null
           instructor_role: string | null
           verify_url: string | null
+          duration_hours: number | null
         }
         Insert: {
           id?: string
@@ -400,6 +401,7 @@ export type Database = {
           instructor_name?: string | null
           instructor_role?: string | null
           verify_url?: string | null
+          duration_hours?: number | null
         }
         Update: {
           id?: string
@@ -418,6 +420,7 @@ export type Database = {
           instructor_name?: string | null
           instructor_role?: string | null
           verify_url?: string | null
+          duration_hours?: number | null
         }
         Relationships: []
       }

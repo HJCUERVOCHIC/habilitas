@@ -6,6 +6,14 @@ function formatDate(iso: string): string {
   return new Intl.DateTimeFormat('es-CO', { dateStyle: 'long' }).format(new Date(iso))
 }
 
+function formatHours(value: number): string {
+  const formatted = new Intl.NumberFormat('es-CO', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 1,
+  }).format(value)
+  return `${formatted} ${value === 1 ? 'hora' : 'horas'}`
+}
+
 interface CertDocumentProps {
   cert: Certificate
   course: CertCourse | null
@@ -58,6 +66,9 @@ export function CertDocument({ cert, course, status, qrSvg, verifyUrl }: CertDoc
 
           <dl className="mt-8 grid grid-cols-1 gap-6 sm:grid-cols-2">
             <Field label="Curso finalizado" value={course?.title ?? '—'} />
+            {cert.duration_hours != null && (
+              <Field label="Duración" value={formatHours(cert.duration_hours)} />
+            )}
             <Field label="Puntaje obtenido" value={`${cert.score}%`} />
             <Field label="Fecha de emisión" value={formatDate(cert.issued_at)} />
             <Field label="Vigencia hasta" value={formatDate(cert.expires_at)} />

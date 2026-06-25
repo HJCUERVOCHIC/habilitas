@@ -393,7 +393,7 @@ export async function emitCertificate(
   if (!evaluation) return { ok: false, reason: 'not-found' }
   const { data: course } = await admin
     .from('courses')
-    .select('id, title, cert_validity_days, instructor_id')
+    .select('id, title, cert_validity_days, instructor_id, duration_hours')
     .eq('id', evaluation.course_id)
     .maybeSingle()
   if (!course) return { ok: false, reason: 'not-found' }
@@ -432,6 +432,7 @@ export async function emitCertificate(
     instructor_name: instructor?.full_name ?? null,
     instructor_role: instructor?.profession ?? null,
     verify_url: verifyUrl,
+    duration_hours: course.duration_hours,
   })
   if (insertError) return { ok: false, reason: 'insert' }
 

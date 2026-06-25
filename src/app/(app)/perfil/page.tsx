@@ -34,7 +34,7 @@ export default async function PerfilPage() {
       }>(),
     supabase
       .from('certificates')
-      .select('cert_id, status, expires_at, score, issued_at, course_id')
+      .select('cert_id, status, expires_at, score, issued_at, course_id, duration_hours')
       .eq('user_id', user.id)
       .order('issued_at', { ascending: false }),
   ])
@@ -53,6 +53,18 @@ export default async function PerfilPage() {
     issued_at: c.issued_at,
     courseTitle: courseTitleById.get(c.course_id) ?? 'Curso',
   }))
+
+  // SPEC-CUMPLIMIENTO-P1 §3 R7: suma de horas sobre constancias del usuario que
+  // no estén revocadas. Las legacy (duration_hours null, emitidas antes de la
+  // migración 0007) se ignoran. Vencidas cuentan: el curso fue finalizado.
+  const accumulatedHours = (certs ?? [])
+    .filter((c) => c.status !== 'revoked')
+    .reduce((sum, c) => sum + (c.duration_hours ?? 0), 0)
+
+  const formattedAccumulated = new Intl.NumberFormat('es-CO', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 1,
+  }).format(accumulatedHours)
 
   return (
     <div className="mx-auto max-w-3xl space-y-10 px-6 py-12">
@@ -86,6 +98,15 @@ export default async function PerfilPage() {
             Ver mis cursos →
           </Link>
         </div>
+        {accumulatedHours > 0 && (
+          <p className="mb-4 text-sm text-ink-soft">
+            Has acumulado{' '}
+            <span className="font-semibold text-charcoal">
+              {formattedAccumulated} {accumulatedHours === 1 ? 'hora' : 'horas'}
+            </span>{' '}
+            de educación informal a través de Habilitas.
+          </p>
+        )}
         {certItems.length > 0 ? (
           <div className="space-y-3">
             {certItems.map((cert) => (
