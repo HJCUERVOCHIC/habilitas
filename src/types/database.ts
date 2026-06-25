@@ -29,6 +29,8 @@ export type Database = {
           rethus_number: string | null
           avatar_url: string | null
           role: string
+          credential: string | null
+          bio: string | null
           created_at: string
           updated_at: string
         }
@@ -41,6 +43,8 @@ export type Database = {
           rethus_number?: string | null
           avatar_url?: string | null
           role?: string
+          credential?: string | null
+          bio?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -53,6 +57,8 @@ export type Database = {
           rethus_number?: string | null
           avatar_url?: string | null
           role?: string
+          credential?: string | null
+          bio?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -75,6 +81,9 @@ export type Database = {
           pass_score: number
           max_attempts: number
           learning_objectives: string[]
+          professional_profile: string | null
+          methodology: string | null
+          completion_rule: string | null
           created_at: string
           updated_at: string
         }
@@ -94,6 +103,9 @@ export type Database = {
           pass_score?: number
           max_attempts?: number
           learning_objectives?: string[]
+          professional_profile?: string | null
+          methodology?: string | null
+          completion_rule?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -113,6 +125,9 @@ export type Database = {
           pass_score?: number
           max_attempts?: number
           learning_objectives?: string[]
+          professional_profile?: string | null
+          methodology?: string | null
+          completion_rule?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -423,6 +438,8 @@ export type Database = {
           id: string | null
           full_name: string | null
           profession: string | null
+          credential: string | null
+          bio: string | null
         }
         Relationships: []
       }

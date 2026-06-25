@@ -57,7 +57,7 @@ export default async function DetalleCursoPage({ params }: { params: { slug: str
   const { data: instructor } = course.instructor_id
     ? await supabase
         .from('instructors_public')
-        .select('full_name, profession')
+        .select('full_name, profession, credential, bio')
         .eq('id', course.instructor_id)
         .maybeSingle()
     : { data: null }
@@ -107,6 +107,13 @@ export default async function DetalleCursoPage({ params }: { params: { slug: str
               </section>
             )}
 
+            {course.professional_profile && (
+              <section>
+                <h2 className="font-display text-2xl text-charcoal">Perfil de egreso</h2>
+                <p className="mt-3 text-ink-main">{course.professional_profile}</p>
+              </section>
+            )}
+
             <section>
               <h2 className="font-display text-2xl text-charcoal">Contenido del curso</h2>
               <p className="mt-1 text-sm text-ink-muted">
@@ -132,13 +139,30 @@ export default async function DetalleCursoPage({ params }: { params: { slug: str
               </ol>
             </section>
 
+            {course.methodology && (
+              <section>
+                <h2 className="font-display text-2xl text-charcoal">Metodología</h2>
+                <p className="mt-3 text-ink-main">{course.methodology}</p>
+              </section>
+            )}
+
             <section>
-              <h2 className="font-display text-2xl text-charcoal">Evaluación y constancia</h2>
+              <h2 className="font-display text-2xl text-charcoal">¿Cómo apruebo este curso?</h2>
               <dl className="mt-4 grid gap-4 sm:grid-cols-3">
                 <Stat label="Puntaje mínimo">{course.pass_score}%</Stat>
                 <Stat label="Intentos">{course.max_attempts}</Stat>
-                <Stat label="Duración">{evaluation?.duration_min ?? '—'} min</Stat>
+                <Stat label="Duración evaluación">{evaluation?.duration_min ?? '—'} min</Stat>
               </dl>
+              {course.completion_rule && (
+                <p className="mt-4 text-ink-main">
+                  <span className="font-medium text-charcoal">Para acreditar el curso: </span>
+                  {course.completion_rule}
+                </p>
+              )}
+              <p className="mt-2 text-sm text-ink-soft">
+                Al cumplir estos criterios se emite la constancia de finalización con URL y QR de
+                verificación pública.
+              </p>
               {course.difficulty && (
                 <div className="mt-4">
                   <DifficultyDots difficulty={course.difficulty} />
@@ -160,6 +184,15 @@ export default async function DetalleCursoPage({ params }: { params: { slug: str
               <p className="mt-2 font-medium text-charcoal">{instructor?.full_name ?? 'Equipo Habilitas'}</p>
               {instructor?.profession && (
                 <p className="text-sm text-ink-soft">{instructor.profession}</p>
+              )}
+              {instructor?.credential && (
+                <p className="mt-2 text-sm text-ink-soft">
+                  <span className="font-medium text-ink-main">Credencial: </span>
+                  {instructor.credential}
+                </p>
+              )}
+              {instructor?.bio && (
+                <p className="mt-2 text-sm text-ink-soft">{instructor.bio}</p>
               )}
 
               <h3 className="mt-6 text-sm font-semibold uppercase tracking-wide text-ink-muted">

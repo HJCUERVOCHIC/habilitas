@@ -92,6 +92,12 @@ const COURSES = [
       'Operar un desfibrilador externo automático (DEA).',
       'Manejar la vía aérea con dispositivos básicos.',
     ],
+    professional_profile:
+      'Al finalizar, el profesional aplica la cadena de supervivencia, ejecuta RCP de alta calidad y opera un DEA en escenarios de paro cardiorrespiratorio en adultos.',
+    methodology:
+      'Curso 100% en línea, a ritmo del estudiante. Videos demostrativos, lecturas guiadas, diapositivas y casos clínicos. Sin sesiones sincrónicas.',
+    completion_rule:
+      'Avanza cada lección al ≥90% en videos o marcando "Visto" en lecturas y diapositivas, y aprueba la evaluación final con ≥70%.',
     modules: [
       {
         title: 'Reconocimiento del paro cardiorrespiratorio',
@@ -126,6 +132,12 @@ const COURSES = [
       'Clasificar y disponer residuos hospitalarios.',
       'Prevenir infecciones asociadas a la atención en salud.',
     ],
+    professional_profile:
+      'Al finalizar, el profesional aplica las precauciones estándar, usa adecuadamente los elementos de protección personal y dispone los residuos hospitalarios reduciendo el riesgo de IAAS.',
+    methodology:
+      'Curso 100% en línea, a ritmo del estudiante. Videos demostrativos, lecturas guiadas y diapositivas con ejemplos del entorno hospitalario. Sin sesiones sincrónicas.',
+    completion_rule:
+      'Avanza cada lección al ≥90% en videos o marcando "Visto" en lecturas y diapositivas, y aprueba la evaluación final con ≥70%.',
     modules: [
       {
         title: 'Precauciones estándar',
@@ -159,6 +171,12 @@ const COURSES = [
       'Inmovilizar y movilizar al paciente traumatizado.',
       'Priorizar intervenciones que salvan vidas.',
     ],
+    professional_profile:
+      'Al finalizar, el profesional aplica el enfoque sistemático ABCDE en el paciente politraumatizado, prioriza intervenciones críticas y reconoce signos de deterioro para activar referencia.',
+    methodology:
+      'Curso 100% en línea, a ritmo del estudiante. Videos demostrativos, lecturas guiadas, imágenes anatómicas y casos clínicos. Sin sesiones sincrónicas.',
+    completion_rule:
+      'Avanza cada lección al ≥90% en videos o marcando "Visto" en lecturas, diapositivas e imágenes, y aprueba la evaluación final con ≥70%.',
     modules: [
       {
         title: 'Evaluación primaria',
@@ -192,6 +210,12 @@ const COURSES = [
       'Identificar medicamentos de alto riesgo.',
       'Prevenir y reportar errores de medicación.',
     ],
+    professional_profile:
+      'Al finalizar, el profesional calcula dosis y velocidades de infusión con seguridad, identifica medicamentos de alto riesgo y aplica barreras para prevenir errores de medicación.',
+    methodology:
+      'Curso 100% en línea, a ritmo del estudiante. Videos demostrativos, lecturas guiadas, diapositivas y ejercicios de cálculo. Sin sesiones sincrónicas.',
+    completion_rule:
+      'Avanza cada lección al ≥90% en videos o marcando "Visto" en lecturas y diapositivas, y aprueba la evaluación final con ≥70%.',
     modules: [
       {
         title: 'Cálculo de dosis',
@@ -372,6 +396,10 @@ try {
     full_name: 'Dra. Carolina Restrepo',
     profession: 'Médica especialista en medicina de urgencias',
     role: 'instructor',
+    credential:
+      'MD · Especialización en Medicina de Urgencias, Universidad CES (2014). Registro médico vigente.',
+    bio:
+      'Doce años de experiencia clínica en servicios de urgencias y formación de personal sanitario en BLS y ACLS. Instructora certificada AHA.',
   })
 
   const holder = await getOrCreateUser('profesional.demo@habilitas.co', {
