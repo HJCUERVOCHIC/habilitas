@@ -22,15 +22,15 @@ export const CERT_STATUS_META: Record<
   { label: string; description: string }
 > = {
   valid: {
-    label: 'Válido y vigente',
-    description: 'Este certificado es auténtico y se encuentra vigente.',
+    label: 'Válida y vigente',
+    description: 'Esta constancia es auténtica y se encuentra vigente.',
   },
   expired: {
-    label: 'Vencido',
-    description: 'Este certificado fue auténtico pero su vigencia ya expiró.',
+    label: 'Vencida',
+    description: 'Esta constancia fue auténtica pero su vigencia ya expiró.',
   },
   revoked: {
-    label: 'Revocado',
-    description: 'Este certificado fue revocado y ya no es válido.',
+    label: 'Revocada',
+    description: 'Esta constancia fue revocada y ya no es válida.',
   },
 }

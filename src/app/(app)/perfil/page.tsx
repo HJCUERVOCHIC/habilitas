@@ -77,7 +77,7 @@ export default async function PerfilPage() {
       <section>
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-ink-muted">
-            Mis certificados
+            Mis constancias
           </h2>
           <Link
             href="/mis-cursos"
@@ -94,7 +94,7 @@ export default async function PerfilPage() {
           </div>
         ) : (
           <p className="rounded-lg border border-border bg-white p-6 text-center text-ink-soft">
-            Todavía no tienes certificados. Aprueba la evaluación de un curso para obtenerlo.
+            Todavía no tienes constancias. Aprueba la evaluación de un curso para obtenerla.
           </p>
         )}
       </section>

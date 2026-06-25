@@ -9,7 +9,7 @@ export function VerifyTopbar() {
           Habilitas
         </Link>
         <Link href="/certificaciones" className="text-sm font-medium text-teal hover:text-teal-light">
-          Ver certificaciones
+          Ver cursos
         </Link>
       </div>
     </header>

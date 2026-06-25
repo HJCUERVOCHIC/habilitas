@@ -20,9 +20,9 @@ const dmSerif = DM_Serif_Display({
 })
 
 export const metadata: Metadata = {
-  title: 'Habilitas — Certificación de habilidades clínicas',
+  title: 'Habilitas — Educación clínica con constancia verificable',
   description:
-    'Estudia, demuestra tu dominio y obtén un certificado con URL pública verificable.',
+    'Estudia, demuestra tu dominio y obtén una constancia con URL pública verificable.',
 }
 
 export default function RootLayout({

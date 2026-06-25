@@ -8,7 +8,7 @@ export function InstitutionsBanner() {
         <div className="max-w-xl">
           <h2 className="font-display text-2xl text-white">¿Eres una IPS, clínica u hospital?</h2>
           <p className="mt-2 text-teal-mid">
-            Certifica y verifica las competencias clínicas de tu equipo, sin llamadas ni trámites.
+            Forma a tu equipo y verifica sus constancias en segundos, sin llamadas ni trámites.
           </p>
         </div>
         <Button asChild variant="outline-white" size="lg">

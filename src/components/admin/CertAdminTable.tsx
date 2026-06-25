@@ -29,7 +29,7 @@ export function CertAdminTable({ certs }: { certs: AdminCert[] }) {
   if (certs.length === 0) {
     return (
       <p className="rounded-lg border border-border bg-white p-6 text-center text-ink-soft">
-        No hay certificados emitidos.
+        No hay constancias emitidas.
       </p>
     )
   }

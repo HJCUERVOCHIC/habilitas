@@ -10,19 +10,19 @@ export function Hero() {
       <div className="mx-auto max-w-6xl px-section py-hero">
         <div className="max-w-3xl">
           <p className="mb-4 text-sm font-semibold uppercase tracking-wide text-teal">
-            Certificación de habilidades clínicas
+            Constancias verificables de habilidades clínicas
           </p>
           <h1 className="font-display text-display-3xl text-charcoal">
-            Demuestra lo que sabes hacer, con un certificado que cualquiera puede verificar.
+            Demuestra lo que sabes hacer, con una constancia que cualquiera puede verificar.
           </h1>
           <p className="mt-6 max-w-xl text-lg text-ink-soft">
-            Estudia una habilidad clínica, apruébala en una evaluación y obtén un certificado con
+            Estudia una habilidad clínica, apruébala en una evaluación y obtén una constancia con
             URL pública verificable en segundos —sin trámites.
           </p>
 
           <div className="mt-8">
             <Button asChild variant="primary" size="lg">
-              <Link href="/certificaciones">Ver certificaciones</Link>
+              <Link href="/certificaciones">Ver cursos</Link>
             </Button>
           </div>
 

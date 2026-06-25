@@ -82,7 +82,7 @@ export default async function MisCursosPage() {
         <p className="rounded-lg border border-border bg-white p-6 text-center text-ink-soft">
           Aún no te has inscrito en ningún curso.{' '}
           <Link href="/certificaciones" className="font-medium text-teal">
-            Ver certificaciones
+            Ver cursos
           </Link>
         </p>
       )}

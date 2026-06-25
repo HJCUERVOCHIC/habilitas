@@ -1,7 +1,7 @@
 const STEPS = [
   {
     title: 'Elige',
-    description: 'Explora el catálogo y elige la habilidad clínica que quieres certificar.',
+    description: 'Explora el catálogo y elige la habilidad clínica que quieres aprender.',
   },
   {
     title: 'Estudia',
@@ -13,7 +13,7 @@ const STEPS = [
   },
   {
     title: 'Comparte',
-    description: 'Obtén tu certificado con URL pública y QR para verificación inmediata.',
+    description: 'Obtén tu constancia con URL pública y QR para verificación inmediata.',
   },
 ]
 

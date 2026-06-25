@@ -20,7 +20,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
               Cursos
             </Link>
             <Link href="/admin/certificados" className="text-teal-mid hover:text-white">
-              Certificados
+              Constancias
             </Link>
           </nav>
           <Link href="/" className="ml-auto text-sm text-teal-mid hover:text-white">

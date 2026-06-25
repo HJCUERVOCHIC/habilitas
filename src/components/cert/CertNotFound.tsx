@@ -26,14 +26,14 @@ export function CertNotFound({ id }: { id: string }) {
           <path d="m21 21-4.3-4.3" />
         </svg>
       </div>
-      <h1 className="font-display text-display-sm text-charcoal">Certificado no encontrado</h1>
+      <h1 className="font-display text-display-sm text-charcoal">Constancia no encontrada</h1>
       <p className="mt-3 text-ink-soft">
-        No existe un certificado con el identificador{' '}
+        No existe una constancia con el identificador{' '}
         <span className="font-mono text-ink-main">{id}</span>. Verifica el enlace o el código QR.
       </p>
       <div className="mt-8">
         <Button asChild variant="primary">
-          <Link href="/certificaciones">Ver certificaciones</Link>
+          <Link href="/certificaciones">Ver cursos</Link>
         </Button>
       </div>
     </div>

@@ -28,11 +28,11 @@ export async function sendCertificateEmail(
     new Date(params.expiresAt),
   )
   const html = `
-    <h2>Tu certificado Habilitas está listo</h2>
+    <h2>Tu constancia Habilitas está lista</h2>
     <p>Hola ${params.professionalName},</p>
     <p>Aprobaste <strong>${params.courseTitle}</strong> con un puntaje de ${params.score}%.</p>
-    <p>Tu certificado <strong>${params.certId}</strong> es válido hasta el ${expires}.</p>
-    <p><a href="${params.verifyUrl}">Ver mi certificado</a></p>
+    <p>Tu constancia <strong>${params.certId}</strong> es válida hasta el ${expires}.</p>
+    <p><a href="${params.verifyUrl}">Ver mi constancia</a></p>
     <p>Comparte este enlace con tu empleador para verificación inmediata.</p>
   `
 
@@ -43,7 +43,7 @@ export async function sendCertificateEmail(
       body: JSON.stringify({
         from,
         to: params.to,
-        subject: `Tu certificado Habilitas está listo — ${params.courseTitle}`,
+        subject: `Tu constancia Habilitas está lista — ${params.courseTitle}`,
         html,
       }),
     })

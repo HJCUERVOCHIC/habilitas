@@ -119,7 +119,7 @@ export default async function DashboardPage() {
         <AccessCard
           href="/certificaciones"
           title="Catálogo"
-          description="Descubre certificaciones publicadas."
+          description="Descubre cursos publicados."
         />
         <AccessCard
           href="/mis-cursos"
@@ -129,7 +129,7 @@ export default async function DashboardPage() {
         <AccessCard
           href="/perfil"
           title="Mi perfil"
-          description="Tus datos y certificados emitidos."
+          description="Tus datos y constancias emitidas."
         />
       </section>
     </div>

@@ -21,8 +21,8 @@ export function VerifyLookup() {
       <input
         value={id}
         onChange={(e) => setId(e.target.value)}
-        placeholder="Verificar un certificado (ej: HAB-2026-0001)"
-        aria-label="Identificador del certificado"
+        placeholder="Verificar una constancia (ej: HAB-2026-0001)"
+        aria-label="Identificador de la constancia"
         className="flex-1 rounded-md border border-border bg-white px-4 py-2.5 text-sm text-ink-main outline-none focus:border-teal focus:ring-2 focus:ring-ring"
       />
       <Button type="submit" variant="ghost">

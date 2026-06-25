@@ -1,6 +1,8 @@
 import { notFound } from 'next/navigation'
 
 import { PurchaseCard } from '@/components/cert/PurchaseCard'
+import { ComplianceNotice } from '@/components/compliance/ComplianceNotice'
+import { ModalityBadge } from '@/components/compliance/ModalityBadge'
 import { CategoryBadge, DifficultyDots } from '@/components/ui/Badge'
 import { Topbar } from '@/components/layout/Topbar'
 import { isCategory } from '@/lib/categories'
@@ -70,7 +72,10 @@ export default async function DetalleCursoPage({ params }: { params: { slug: str
         {/* Header */}
         <div className="border-b border-border bg-white">
           <div className="mx-auto max-w-6xl px-6 py-10">
-            {category && <CategoryBadge category={category} />}
+            <div className="flex flex-wrap items-center gap-2">
+              {category && <CategoryBadge category={category} />}
+              <ModalityBadge />
+            </div>
             <h1 className="mt-2 font-display text-display-lg text-charcoal">{course.title}</h1>
             {course.subtitle && <p className="mt-2 text-lg text-ink-soft">{course.subtitle}</p>}
 
@@ -90,7 +95,7 @@ export default async function DetalleCursoPage({ params }: { params: { slug: str
 
             {course.learning_objectives.length > 0 && (
               <section>
-                <h2 className="font-display text-2xl text-charcoal">Lo que certificarás</h2>
+                <h2 className="font-display text-2xl text-charcoal">Lo que aprenderás</h2>
                 <ul className="mt-4 grid gap-3 sm:grid-cols-2">
                   {course.learning_objectives.map((objective) => (
                     <li key={objective} className="flex items-start gap-2 text-sm text-ink-soft">
@@ -128,7 +133,7 @@ export default async function DetalleCursoPage({ params }: { params: { slug: str
             </section>
 
             <section>
-              <h2 className="font-display text-2xl text-charcoal">Evaluación y certificación</h2>
+              <h2 className="font-display text-2xl text-charcoal">Evaluación y constancia</h2>
               <dl className="mt-4 grid gap-4 sm:grid-cols-3">
                 <Stat label="Puntaje mínimo">{course.pass_score}%</Stat>
                 <Stat label="Intentos">{course.max_attempts}</Stat>
@@ -140,6 +145,8 @@ export default async function DetalleCursoPage({ params }: { params: { slug: str
                 </div>
               )}
             </section>
+
+            <ComplianceNotice />
           </div>
 
           {/* Sidebar */}
@@ -159,7 +166,7 @@ export default async function DetalleCursoPage({ params }: { params: { slug: str
                 Dónde es reconocido
               </h3>
               <p className="mt-1 text-sm text-ink-soft">
-                Certificado verificable en línea por empleadores e instituciones de salud.
+                Constancia verificable en línea por empleadores e instituciones de salud.
               </p>
 
               <h3 className="mt-6 text-sm font-semibold uppercase tracking-wide text-ink-muted">

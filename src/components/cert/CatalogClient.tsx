@@ -38,7 +38,7 @@ export function CatalogClient({ courses }: { courses: CatalogCourse[] }) {
 
       <p className="mt-4 text-sm text-ink-soft" aria-live="polite">
         {filtered.length}{' '}
-        {filtered.length === 1 ? 'certificación disponible' : 'certificaciones disponibles'}
+        {filtered.length === 1 ? 'curso disponible' : 'cursos disponibles'}
       </p>
 
       {filtered.length > 0 ? (
@@ -49,7 +49,7 @@ export function CatalogClient({ courses }: { courses: CatalogCourse[] }) {
         </div>
       ) : (
         <p className="mt-10 text-center text-ink-muted">
-          No hay certificaciones en esta categoría todavía.
+          No hay cursos en esta categoría todavía.
         </p>
       )}
     </div>

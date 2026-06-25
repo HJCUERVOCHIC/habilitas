@@ -36,7 +36,7 @@ export default async function AdminDashboard() {
           Gestionar cursos →
         </Link>
         <Link href="/admin/certificados" className="font-medium text-teal hover:text-teal-light">
-          Ver certificados →
+          Ver constancias →
         </Link>
       </div>
     </div>

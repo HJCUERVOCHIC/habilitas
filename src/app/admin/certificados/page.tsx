@@ -27,7 +27,7 @@ export default async function AdminCertificadosPage() {
 
   return (
     <div>
-      <h1 className="mb-6 font-display text-display-md text-charcoal">Certificados emitidos</h1>
+      <h1 className="mb-6 font-display text-display-md text-charcoal">Constancias emitidas</h1>
       <CertAdminTable certs={rows} />
     </div>
   )

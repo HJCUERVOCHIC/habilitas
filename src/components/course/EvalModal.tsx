@@ -395,7 +395,7 @@ function ResultsScreen({
         <>
           <div className="mt-6 flex justify-center">
             <Button variant="primary" size="lg" onClick={onEmit} disabled={emitting}>
-              {emitting ? 'Emitiendo…' : 'Obtener certificado'}
+              {emitting ? 'Emitiendo…' : 'Obtener constancia'}
             </Button>
           </div>
           {result.review && (

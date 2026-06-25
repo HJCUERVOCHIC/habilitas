@@ -9,8 +9,8 @@ export function PurchaseCard({ slug, validityDays }: { slug: string; validityDay
   const validityMonths = Math.round(validityDays / 30)
   const inclusions = [
     'Acceso completo al contenido del curso',
-    'Evaluación final con certificado verificable',
-    `Certificado con vigencia de ${validityMonths} meses`,
+    'Evaluación final con constancia verificable',
+    `Constancia con vigencia de ${validityMonths} meses`,
     'Verificación pública por URL y QR',
   ]
 

@@ -4,6 +4,7 @@ import { CertDocument } from '@/components/cert/CertDocument'
 import { CertNotFound } from '@/components/cert/CertNotFound'
 import { CopyLinkButton } from '@/components/cert/CopyLinkButton'
 import { VerifyBanner } from '@/components/cert/VerifyBanner'
+import { ComplianceNotice } from '@/components/compliance/ComplianceNotice'
 import { Button } from '@/components/ui/Button'
 import { VerifyTopbar } from '@/components/layout/VerifyTopbar'
 import { getCertStatus } from '@/lib/cert-states'
@@ -60,6 +61,7 @@ export default async function VerificarPage({ params }: { params: { id: string }
       <main className="bg-sand">
         <div className="mx-auto max-w-3xl space-y-6 px-6 py-12">
           <VerifyBanner status={status} />
+          <ComplianceNotice />
           <CertDocument
             cert={cert}
             course={course}
@@ -70,7 +72,7 @@ export default async function VerificarPage({ params }: { params: { id: string }
           <div className="flex items-center justify-center gap-4">
             <CopyLinkButton url={verifyUrl} />
             <Button asChild variant="ghost">
-              <Link href="/certificaciones">Ver certificaciones</Link>
+              <Link href="/certificaciones">Ver cursos</Link>
             </Button>
           </div>
         </div>

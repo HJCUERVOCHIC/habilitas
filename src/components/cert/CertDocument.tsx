@@ -1,3 +1,5 @@
+import { ComplianceNotice } from '@/components/compliance/ComplianceNotice'
+import { MODALIDAD } from '@/lib/compliance'
 import type { CertCourse, Certificate, CertStatus } from '@/types/cert'
 
 function formatDate(iso: string): string {
@@ -24,7 +26,7 @@ export function CertDocument({ cert, course, status, qrSvg, verifyUrl }: CertDoc
   return (
     <article
       className="overflow-hidden rounded-lg border border-border bg-white shadow-md"
-      aria-label={`Certificado ${cert.cert_id}`}
+      aria-label={`${MODALIDAD.artefacto} ${cert.cert_id}`}
     >
       {/* Header — único lugar permitido del gradiente teal */}
       <header className="gradient-cert-header flex items-center justify-between px-8 py-6 text-white">
@@ -32,11 +34,11 @@ export function CertDocument({ cert, course, status, qrSvg, verifyUrl }: CertDoc
           <Seal />
           <div>
             <p className="font-display text-2xl leading-none">Habilitas</p>
-            <p className="text-sm text-teal-mid">Certificación de habilidades clínicas</p>
+            <p className="text-sm text-teal-mid">{MODALIDAD.encabezadoArtefacto}</p>
           </div>
         </div>
         <div className="text-right">
-          <p className="text-xs uppercase tracking-wide text-teal-mid">Certificado</p>
+          <p className="text-xs uppercase tracking-wide text-teal-mid">{MODALIDAD.artefacto}</p>
           <p className="font-mono text-lg font-semibold">{cert.cert_id}</p>
         </div>
       </header>
@@ -45,7 +47,7 @@ export function CertDocument({ cert, course, status, qrSvg, verifyUrl }: CertDoc
         {/* Cuerpo */}
         <div className="px-8 py-8">
           <p className="text-sm uppercase tracking-wide text-text-soft">
-            Se certifica a
+            Se hace constar que
           </p>
           <h1 className="mt-1 font-display text-display-md text-charcoal">
             {cert.professional_name}
@@ -55,7 +57,7 @@ export function CertDocument({ cert, course, status, qrSvg, verifyUrl }: CertDoc
           )}
 
           <dl className="mt-8 grid grid-cols-1 gap-6 sm:grid-cols-2">
-            <Field label="Habilidad certificada" value={course?.title ?? '—'} />
+            <Field label="Curso finalizado" value={course?.title ?? '—'} />
             <Field label="Puntaje obtenido" value={`${cert.score}%`} />
             <Field label="Fecha de emisión" value={formatDate(cert.issued_at)} />
             <Field label="Vigencia hasta" value={formatDate(cert.expires_at)} />
@@ -73,6 +75,8 @@ export function CertDocument({ cert, course, status, qrSvg, verifyUrl }: CertDoc
               </p>
             </div>
           </div>
+
+          <ComplianceNotice className="mt-8" />
         </div>
 
         {/* Footer — QR + URL de verificación */}

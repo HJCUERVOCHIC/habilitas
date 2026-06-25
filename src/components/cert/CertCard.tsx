@@ -1,5 +1,6 @@
 import Link from 'next/link'
 
+import { ModalityBadge } from '@/components/compliance/ModalityBadge'
 import { Button } from '@/components/ui/Button'
 import { CategoryBadge, DifficultyDots } from '@/components/ui/Badge'
 import { CATEGORY_BG_CLASS, isCategory } from '@/lib/categories'
@@ -25,7 +26,10 @@ export function CertCard({ course }: { course: CatalogCourse }) {
       <div className={cn('h-1.5', category ? CATEGORY_BG_CLASS[category] : 'bg-border')} />
 
       <div className="flex flex-1 flex-col p-6">
-        {category && <CategoryBadge category={category} />}
+        <div className="flex flex-wrap items-center gap-2">
+          {category && <CategoryBadge category={category} />}
+          <ModalityBadge />
+        </div>
 
         <h3 className="mt-2 text-lg font-semibold text-charcoal">
           <Link href={`/certificaciones/${course.slug}`} className="hover:text-teal">

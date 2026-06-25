@@ -36,7 +36,7 @@ export default function Home() {
           <p className="font-display text-lg text-charcoal">Habilitas</p>
           <nav className="flex gap-6 text-sm text-ink-soft">
             <Link href="/certificaciones" className="hover:text-teal">
-              Certificaciones
+              Cursos
             </Link>
             <Link href="/ingresar" className="hover:text-teal">
               Ingresar
