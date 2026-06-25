@@ -10,7 +10,9 @@ export default async function AdminCertificadosPage() {
   const admin = createAdminClient()
   const { data: certs } = await admin
     .from('certificates')
-    .select('cert_id, professional_name, status, expires_at, score, course_id')
+    .select(
+      'cert_id, verification_id, professional_name, status, expires_at, score, course_id',
+    )
     .order('issued_at', { ascending: false })
 
   const courseIds = Array.from(new Set((certs ?? []).map((c) => c.course_id)))
@@ -21,6 +23,7 @@ export default async function AdminCertificadosPage() {
 
   const rows: AdminCert[] = (certs ?? []).map((c) => ({
     cert_id: c.cert_id,
+    verification_id: c.verification_id,
     professional_name: c.professional_name,
     status: c.status,
     expires_at: c.expires_at,

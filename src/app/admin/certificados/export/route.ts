@@ -10,6 +10,7 @@ export const dynamic = 'force-dynamic'
 
 const HEADERS = [
   'id_constancia',
+  'id_verificacion',
   'usuario',
   'curso',
   'horas',
@@ -32,7 +33,7 @@ export async function GET() {
   const { data: certs, error: certsError } = await admin
     .from('certificates')
     .select(
-      'cert_id, professional_name, status, expires_at, score, issued_at, course_id, duration_hours, revoked_at, revoke_reason, verify_url',
+      'cert_id, verification_id, professional_name, status, expires_at, score, issued_at, course_id, duration_hours, revoked_at, revoke_reason, verify_url',
     )
     .order('issued_at', { ascending: false })
 
@@ -48,6 +49,7 @@ export async function GET() {
 
   const rows = (certs ?? []).map((c) => [
     c.cert_id,
+    c.verification_id ?? '',
     c.professional_name,
     titleById.get(c.course_id) ?? '',
     c.duration_hours ?? '',

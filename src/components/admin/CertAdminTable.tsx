@@ -12,6 +12,7 @@ import type { CertStatus } from '@/types/cert'
 
 export interface AdminCert {
   cert_id: string
+  verification_id: string | null
   professional_name: string
   status: string
   expires_at: string
@@ -76,7 +77,10 @@ function CertRow({ cert }: { cert: AdminCert }) {
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <Link href={`/verificar/${cert.cert_id}`} className="text-sm text-teal hover:text-teal-light">
+          <Link
+            href={`/verificar/${cert.verification_id ?? cert.cert_id}`}
+            className="text-sm text-teal hover:text-teal-light"
+          >
             Ver
           </Link>
           {status !== 'revoked' && !revoking && (

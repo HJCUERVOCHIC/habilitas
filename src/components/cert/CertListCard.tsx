@@ -6,6 +6,7 @@ import type { CertStatus } from '@/types/cert'
 
 export interface CertListItem {
   cert_id: string
+  verification_id: string | null
   status: string
   expires_at: string
   score: number
@@ -48,7 +49,7 @@ export function CertListCard({ cert }: { cert: CertListItem }) {
         </p>
       </div>
       <Link
-        href={`/verificar/${cert.cert_id}`}
+        href={`/verificar/${cert.verification_id ?? cert.cert_id}`}
         className="shrink-0 text-sm font-medium text-teal hover:text-teal-light"
       >
         Ver →

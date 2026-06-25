@@ -1,5 +1,7 @@
 'use server'
 
+import { randomUUID } from 'node:crypto'
+
 import { allModulesCompleted } from '@/lib/course-progress'
 import { sendCertificateEmail } from '@/lib/email'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -417,10 +419,14 @@ export async function emitCertificate(
   const issuedAt = new Date()
   const expiresAt = new Date(issuedAt.getTime() + course.cert_validity_days * 86_400_000)
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? ''
-  const verifyUrl = `${siteUrl}/verificar/${certId}`
+  // Token opaco, no enumerable (SPEC-CUMPLIMIENTO-P1 §3 R9). El cert_id
+  // legible se conserva para soporte; las URLs públicas usan verification_id.
+  const verificationId = randomUUID()
+  const verifyUrl = `${siteUrl}/verificar/${verificationId}`
 
   const { error: insertError } = await admin.from('certificates').insert({
     cert_id: certId,
+    verification_id: verificationId,
     user_id: attempt.user_id,
     course_id: course.id,
     eval_attempt_id: attempt.id,

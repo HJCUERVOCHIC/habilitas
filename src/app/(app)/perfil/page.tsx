@@ -34,7 +34,9 @@ export default async function PerfilPage() {
       }>(),
     supabase
       .from('certificates')
-      .select('cert_id, status, expires_at, score, issued_at, course_id, duration_hours')
+      .select(
+        'cert_id, verification_id, status, expires_at, score, issued_at, course_id, duration_hours',
+      )
       .eq('user_id', user.id)
       .order('issued_at', { ascending: false }),
   ])
@@ -47,6 +49,7 @@ export default async function PerfilPage() {
 
   const certItems: CertListItem[] = (certs ?? []).map((c) => ({
     cert_id: c.cert_id,
+    verification_id: c.verification_id,
     status: c.status,
     expires_at: c.expires_at,
     score: c.score,
