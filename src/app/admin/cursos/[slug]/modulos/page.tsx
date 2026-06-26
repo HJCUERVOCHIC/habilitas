@@ -49,7 +49,7 @@ export default async function ModulosPage({ params }: { params: { slug: string }
         ← {course.title}
       </Link>
       <h1 className="mb-6 mt-2 font-display text-display-md text-charcoal">Módulos y lecciones</h1>
-      <ModulesManager courseId={course.id} modules={adminModules} />
+      <ModulesManager courseId={course.id} courseSlug={params.slug} modules={adminModules} />
     </div>
   )
 }

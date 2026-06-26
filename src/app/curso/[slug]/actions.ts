@@ -21,7 +21,7 @@ type Context =
         module_id: string
         content_type: string
         content_r2_key: string | null
-        transcript: string | null
+        body_md: string | null
       }
       modules: ModuleWithLessons[]
       progress: ProgressMap
@@ -43,7 +43,7 @@ async function loadContext(lessonId: string): Promise<Context> {
   // RLS: solo lecciones de cursos en los que el usuario está inscrito.
   const { data: lesson } = await supabase
     .from('lessons')
-    .select('id, module_id, content_type, content_r2_key, transcript')
+    .select('id, module_id, content_type, content_r2_key, body_md')
     .eq('id', lessonId)
     .maybeSingle()
   if (!lesson) return { error: 'enrollment' }
@@ -111,7 +111,7 @@ export async function getLessonContent(lessonId: string): Promise<LessonContent>
 
   const { lesson } = ctx
   if (lesson.content_type === 'text') {
-    return { ok: true, kind: 'text', markdown: lesson.transcript ?? '' }
+    return { ok: true, kind: 'text', markdown: lesson.body_md ?? '' }
   }
   if (!lesson.content_r2_key) {
     return { ok: true, kind: 'unavailable', reason: 'no-content', contentType: lesson.content_type }

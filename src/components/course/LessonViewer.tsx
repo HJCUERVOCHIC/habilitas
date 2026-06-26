@@ -1,10 +1,10 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import ReactMarkdown from 'react-markdown'
 
 import { getLessonContent, markLessonComplete, type LessonContent } from '@/app/curso/[slug]/actions'
 import { VideoPlayer } from '@/components/course/VideoPlayer'
+import { MarkdownContent } from '@/components/markdown/MarkdownContent'
 import { Button } from '@/components/ui/Button'
 import type { LessonLite, ProgressEntry } from '@/types/course'
 
@@ -125,11 +125,7 @@ function LessonBody({
     if (!content.markdown.trim()) {
       return <Placeholder>Esta lectura aún no tiene contenido cargado.</Placeholder>
     }
-    return (
-      <div className="space-y-3 text-ink-main [&_h1]:font-display [&_h1]:text-2xl [&_h2]:mt-4 [&_h2]:font-semibold [&_a]:text-teal [&_li]:ml-5 [&_li]:list-disc">
-        <ReactMarkdown>{content.markdown}</ReactMarkdown>
-      </div>
-    )
+    return <MarkdownContent source={content.markdown} />
   }
 
   if (content.kind === 'unavailable') {

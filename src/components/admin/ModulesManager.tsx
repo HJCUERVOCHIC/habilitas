@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 
 import {
@@ -35,13 +36,18 @@ export interface AdminModule {
  * Gestor de estructura del curso (SPEC-CURSOS-ESTRUCTURA §1):
  *   - Módulos: crear, editar título, reordenar (↑/↓), eliminar.
  *   - Lecciones: crear (título + tipo), editar título y tipo, reordenar,
- *     eliminar. El contenido (medios, transcripción, duración) es Bloque 2.
+ *     eliminar.
+ *
+ * Bloque 2 conecta cada lección con su editor de contenido
+ * (`/admin/cursos/[slug]/lecciones/[lessonId]`), por eso recibe `courseSlug`.
  */
 export function ModulesManager({
   courseId,
+  courseSlug,
   modules,
 }: {
   courseId: string
+  courseSlug: string
   modules: AdminModule[]
 }) {
   const router = useRouter()
@@ -74,6 +80,7 @@ export function ModulesManager({
       {modules.map((mod, index) => (
         <ModuleCard
           key={mod.id}
+          courseSlug={courseSlug}
           module={mod}
           index={index}
           isFirst={index === 0}
@@ -90,12 +97,14 @@ export function ModulesManager({
 }
 
 function ModuleCard({
+  courseSlug,
   module,
   index,
   isFirst,
   isLast,
   onMutated,
 }: {
+  courseSlug: string
   module: AdminModule
   index: number
   isFirst: boolean
@@ -204,6 +213,7 @@ function ModuleCard({
         {module.lessons.map((lesson, i) => (
           <LessonRow
             key={lesson.id}
+            courseSlug={courseSlug}
             lesson={lesson}
             isFirst={i === 0}
             isLast={i === module.lessons.length - 1}
@@ -221,11 +231,13 @@ function ModuleCard({
 }
 
 function LessonRow({
+  courseSlug,
   lesson,
   isFirst,
   isLast,
   onMutated,
 }: {
+  courseSlug: string
   lesson: AdminLesson
   isFirst: boolean
   isLast: boolean
@@ -327,6 +339,12 @@ function LessonRow({
           onUp={() => move('up')}
           onDown={() => move('down')}
         />
+        <Link
+          href={`/admin/cursos/${courseSlug}/lecciones/${lesson.id}`}
+          className="text-xs text-teal hover:underline"
+        >
+          Contenido
+        </Link>
         <button
           type="button"
           className="text-xs text-teal hover:underline"

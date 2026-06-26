@@ -171,6 +171,10 @@ export type Database = {
           content_r2_key: string | null
           duration_min: number | null
           transcript: string | null
+          body_md: string | null
+          content_original_name: string | null
+          content_mime_type: string | null
+          content_size_bytes: number | null
           created_at: string
         }
         Insert: {
@@ -183,6 +187,10 @@ export type Database = {
           content_r2_key?: string | null
           duration_min?: number | null
           transcript?: string | null
+          body_md?: string | null
+          content_original_name?: string | null
+          content_mime_type?: string | null
+          content_size_bytes?: number | null
           created_at?: string
         }
         Update: {
@@ -195,6 +203,10 @@ export type Database = {
           content_r2_key?: string | null
           duration_min?: number | null
           transcript?: string | null
+          body_md?: string | null
+          content_original_name?: string | null
+          content_mime_type?: string | null
+          content_size_bytes?: number | null
           created_at?: string
         }
         Relationships: []
