@@ -405,11 +405,124 @@ export async function createQuestion(
   return error ? { ok: false, error: error.message } : { ok: true }
 }
 
+export async function updateQuestion(
+  questionId: string,
+  input: QuestionInput,
+): Promise<Result> {
+  if (!(await ensureAdmin())) return { ok: false, error: 'No autorizado.' }
+  const options = input.options.map((o) => o.trim()).filter(Boolean)
+  if (!input.text.trim()) return { ok: false, error: 'El enunciado es obligatorio.' }
+  if (options.length < 2) return { ok: false, error: 'Se requieren al menos 2 opciones.' }
+  if (input.correct_option < 0 || input.correct_option >= options.length) {
+    return { ok: false, error: 'La opción correcta no es válida.' }
+  }
+  const admin = createAdminClient()
+  const { error } = await admin
+    .from('questions')
+    .update({
+      text: input.text.trim(),
+      context: input.context.trim() || null,
+      options,
+      correct_option: input.correct_option,
+      feedback_correct: input.feedback_correct.trim() || null,
+      feedback_wrong: input.feedback_wrong.trim() || null,
+    })
+    .eq('id', questionId)
+  return error ? { ok: false, error: error.message } : { ok: true }
+}
+
+export async function reorderQuestion(
+  questionId: string,
+  direction: 'up' | 'down',
+): Promise<Result> {
+  if (!(await ensureAdmin())) return { ok: false, error: 'No autorizado.' }
+  const admin = createAdminClient()
+  const { data: target } = await admin
+    .from('questions')
+    .select('id, evaluation_id, order_index')
+    .eq('id', questionId)
+    .maybeSingle()
+  if (!target) return { ok: false, error: 'Pregunta no encontrada.' }
+
+  const neighborQuery = admin
+    .from('questions')
+    .select('id, order_index')
+    .eq('evaluation_id', target.evaluation_id)
+  const { data: neighbor } =
+    direction === 'up'
+      ? await neighborQuery
+          .lt('order_index', target.order_index)
+          .order('order_index', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+      : await neighborQuery
+          .gt('order_index', target.order_index)
+          .order('order_index', { ascending: true })
+          .limit(1)
+          .maybeSingle()
+
+  if (!neighbor) return { ok: true }
+
+  const a = await admin
+    .from('questions')
+    .update({ order_index: neighbor.order_index })
+    .eq('id', target.id)
+  if (a.error) return { ok: false, error: a.error.message }
+  const b = await admin
+    .from('questions')
+    .update({ order_index: target.order_index })
+    .eq('id', neighbor.id)
+  if (b.error) return { ok: false, error: b.error.message }
+  return { ok: true }
+}
+
 export async function deleteQuestion(questionId: string): Promise<Result> {
   if (!(await ensureAdmin())) return { ok: false, error: 'No autorizado.' }
   const admin = createAdminClient()
   const { error } = await admin.from('questions').delete().eq('id', questionId)
   return error ? { ok: false, error: error.message } : { ok: true }
+}
+
+/**
+ * Configura la evaluación del curso (SPEC-EVALUACION-BANCO §1):
+ * questions_per_attempt vive en `evaluations`; pass_score (nota mínima) en
+ * `courses`. Una sola acción atómica para el admin.
+ */
+export async function setEvaluationConfig(
+  courseId: string,
+  input: { questions_per_attempt: number; pass_score: number },
+): Promise<Result> {
+  if (!(await ensureAdmin())) return { ok: false, error: 'No autorizado.' }
+  if (!Number.isInteger(input.questions_per_attempt) || input.questions_per_attempt < 1) {
+    return { ok: false, error: 'Preguntas por intento debe ser un entero ≥ 1.' }
+  }
+  if (
+    !Number.isInteger(input.pass_score) ||
+    input.pass_score < 0 ||
+    input.pass_score > 100
+  ) {
+    return { ok: false, error: 'La nota mínima debe ser un entero entre 0 y 100.' }
+  }
+  const admin = createAdminClient()
+  const { data: evaluation } = await admin
+    .from('evaluations')
+    .select('id')
+    .eq('course_id', courseId)
+    .maybeSingle()
+  if (!evaluation) return { ok: false, error: 'El curso aún no tiene evaluación.' }
+
+  const evalUpdate = await admin
+    .from('evaluations')
+    .update({ questions_per_attempt: input.questions_per_attempt })
+    .eq('id', evaluation.id)
+  if (evalUpdate.error) return { ok: false, error: evalUpdate.error.message }
+
+  const courseUpdate = await admin
+    .from('courses')
+    .update({ pass_score: input.pass_score, updated_at: new Date().toISOString() })
+    .eq('id', courseId)
+  if (courseUpdate.error) return { ok: false, error: courseUpdate.error.message }
+  return { ok: true }
 }
 
 export async function revokeCertificate(certId: string, reason: string): Promise<Result> {

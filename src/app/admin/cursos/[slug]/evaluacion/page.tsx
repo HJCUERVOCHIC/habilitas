@@ -14,21 +14,23 @@ export default async function EvaluacionPage({ params }: { params: { slug: strin
   const admin = createAdminClient()
   const { data: course } = await admin
     .from('courses')
-    .select('id, title')
+    .select('id, title, pass_score')
     .eq('slug', params.slug)
     .maybeSingle()
   if (!course) notFound()
 
   const { data: evaluation } = await admin
     .from('evaluations')
-    .select('id')
+    .select('id, questions_per_attempt')
     .eq('course_id', course.id)
     .maybeSingle()
 
   const { data: questions } = evaluation
     ? await admin
         .from('questions')
-        .select('id, text, correct_option, options, order_index')
+        .select(
+          'id, text, context, correct_option, options, order_index, feedback_correct, feedback_wrong',
+        )
         .eq('evaluation_id', evaluation.id)
         .order('order_index')
     : { data: [] }
@@ -36,13 +38,19 @@ export default async function EvaluacionPage({ params }: { params: { slug: strin
   const adminQuestions: AdminQuestion[] = (questions ?? []).map((q) => ({
     id: q.id,
     text: q.text,
+    context: q.context,
     correct_option: q.correct_option,
     options: toOptions(q.options),
+    feedback_correct: q.feedback_correct,
+    feedback_wrong: q.feedback_wrong,
   }))
 
   return (
     <div>
-      <Link href={`/admin/cursos/${params.slug}`} className="text-sm text-teal hover:text-teal-light">
+      <Link
+        href={`/admin/cursos/${params.slug}`}
+        className="text-sm text-teal hover:text-teal-light"
+      >
         ← {course.title}
       </Link>
       <h1 className="mb-6 mt-2 font-display text-display-md text-charcoal">
@@ -51,6 +59,8 @@ export default async function EvaluacionPage({ params }: { params: { slug: strin
       <EvaluationManager
         courseId={course.id}
         evaluationId={evaluation?.id ?? null}
+        questionsPerAttempt={evaluation?.questions_per_attempt ?? 10}
+        passScore={course.pass_score}
         questions={adminQuestions}
       />
     </div>

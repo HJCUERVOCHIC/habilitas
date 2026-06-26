@@ -278,6 +278,7 @@ export type Database = {
           title: string
           duration_min: number
           instructions: string | null
+          questions_per_attempt: number
           created_at: string
         }
         Insert: {
@@ -286,6 +287,7 @@ export type Database = {
           title?: string
           duration_min?: number
           instructions?: string | null
+          questions_per_attempt?: number
           created_at?: string
         }
         Update: {
@@ -294,6 +296,7 @@ export type Database = {
           title?: string
           duration_min?: number
           instructions?: string | null
+          questions_per_attempt?: number
           created_at?: string
         }
         Relationships: []
