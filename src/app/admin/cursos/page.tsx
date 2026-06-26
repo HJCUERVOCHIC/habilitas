@@ -9,9 +9,12 @@ export const dynamic = 'force-dynamic'
 
 export default async function AdminCursosPage() {
   const admin = createAdminClient()
+  // Los archivados (soft-delete) se ocultan del listado. Restaurar requiere
+  // intervención por DB en este bloque (Bloque 1 no expone UI de restore).
   const { data: courses } = await admin
     .from('courses')
     .select('id, slug, title, category, published')
+    .is('archived_at', null)
     .order('created_at', { ascending: false })
 
   return (

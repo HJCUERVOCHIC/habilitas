@@ -84,6 +84,7 @@ export type Database = {
           professional_profile: string | null
           methodology: string | null
           completion_rule: string | null
+          archived_at: string | null
           created_at: string
           updated_at: string
         }
@@ -106,6 +107,7 @@ export type Database = {
           professional_profile?: string | null
           methodology?: string | null
           completion_rule?: string | null
+          archived_at?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -128,6 +130,7 @@ export type Database = {
           professional_profile?: string | null
           methodology?: string | null
           completion_rule?: string | null
+          archived_at?: string | null
           created_at?: string
           updated_at?: string
         }

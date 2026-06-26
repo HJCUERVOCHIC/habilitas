@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
+import { ArchiveCourseButton } from '@/components/admin/ArchiveCourseButton'
 import { CourseForm } from '@/components/admin/CourseForm'
 import { PublishToggle } from '@/components/admin/PublishToggle'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -75,6 +76,20 @@ export default async function EditarCursoPage({ params }: { params: { slug: stri
       <div className="mt-6">
         <CourseForm mode="edit" courseId={course.id} initial={initial} />
       </div>
+
+      {!course.published && (
+        <div className="mt-8 border-t border-border pt-6">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-ink-muted">
+            Zona peligrosa
+          </h2>
+          <p className="mt-2 text-sm text-ink-soft">
+            Solo borradores sin inscripciones ni constancias se pueden archivar.
+          </p>
+          <div className="mt-3">
+            <ArchiveCourseButton courseId={course.id} title={course.title} />
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -75,6 +75,66 @@ export async function updateCourse(courseId: string, input: CourseInput): Promis
   return { ok: true }
 }
 
+/**
+ * Soft-delete del curso (SPEC-CURSOS-ESTRUCTURA §1). Solo permitido si el
+ * curso es borrador y no tiene inscripciones ni constancias emitidas
+ * (preserva el acceso de cualquier persona ya inscrita y la integridad de
+ * constancias). Reversible vía restoreCourse.
+ */
+export async function archiveCourse(courseId: string): Promise<Result> {
+  if (!(await ensureAdmin())) return { ok: false, error: 'No autorizado.' }
+  const admin = createAdminClient()
+  const { data: course } = await admin
+    .from('courses')
+    .select('published, archived_at')
+    .eq('id', courseId)
+    .maybeSingle()
+  if (!course) return { ok: false, error: 'Curso no encontrado.' }
+  if (course.archived_at) return { ok: true }
+  if (course.published) {
+    return { ok: false, error: 'Despublica el curso antes de archivarlo.' }
+  }
+  const { count: enrollments } = await admin
+    .from('enrollments')
+    .select('*', { count: 'exact', head: true })
+    .eq('course_id', courseId)
+  if (enrollments && enrollments > 0) {
+    return {
+      ok: false,
+      error: 'Hay personas inscritas; archivar dejaría esas inscripciones sin acceso.',
+    }
+  }
+  const { count: certs } = await admin
+    .from('certificates')
+    .select('*', { count: 'exact', head: true })
+    .eq('course_id', courseId)
+  if (certs && certs > 0) {
+    return { ok: false, error: 'El curso tiene constancias emitidas; no se puede archivar.' }
+  }
+  const now = new Date().toISOString()
+  const { error } = await admin
+    .from('courses')
+    .update({ archived_at: now, updated_at: now })
+    .eq('id', courseId)
+  if (error) return { ok: false, error: error.message }
+  revalidatePath('/admin/cursos')
+  revalidatePath('/certificaciones')
+  return { ok: true }
+}
+
+/** Restaura un curso archivado (sin UI en Bloque 1; reservado para futuro). */
+export async function restoreCourse(courseId: string): Promise<Result> {
+  if (!(await ensureAdmin())) return { ok: false, error: 'No autorizado.' }
+  const admin = createAdminClient()
+  const { error } = await admin
+    .from('courses')
+    .update({ archived_at: null, updated_at: new Date().toISOString() })
+    .eq('id', courseId)
+  if (error) return { ok: false, error: error.message }
+  revalidatePath('/admin/cursos')
+  return { ok: true }
+}
+
 export async function setPublished(courseId: string, published: boolean): Promise<Result> {
   if (!(await ensureAdmin())) return { ok: false, error: 'No autorizado.' }
   const admin = createAdminClient()
@@ -124,6 +184,67 @@ export async function createModule(courseId: string, title: string): Promise<Res
   return { ok: true }
 }
 
+export async function updateModule(moduleId: string, title: string): Promise<Result> {
+  if (!(await ensureAdmin())) return { ok: false, error: 'No autorizado.' }
+  if (!title.trim()) return { ok: false, error: 'El título es obligatorio.' }
+  const admin = createAdminClient()
+  const { error } = await admin
+    .from('modules')
+    .update({ title: title.trim() })
+    .eq('id', moduleId)
+  return error ? { ok: false, error: error.message } : { ok: true }
+}
+
+/**
+ * Reordena un módulo intercambiando su `order_index` con el vecino en la
+ * dirección indicada. No hay constraint único en (course_id, order_index),
+ * por lo que el swap en dos updates funciona sin colisión.
+ */
+export async function reorderModule(
+  moduleId: string,
+  direction: 'up' | 'down',
+): Promise<Result> {
+  if (!(await ensureAdmin())) return { ok: false, error: 'No autorizado.' }
+  const admin = createAdminClient()
+  const { data: target } = await admin
+    .from('modules')
+    .select('id, course_id, order_index')
+    .eq('id', moduleId)
+    .maybeSingle()
+  if (!target) return { ok: false, error: 'Módulo no encontrado.' }
+
+  const neighborQuery = admin
+    .from('modules')
+    .select('id, order_index')
+    .eq('course_id', target.course_id)
+  const { data: neighbor } =
+    direction === 'up'
+      ? await neighborQuery
+          .lt('order_index', target.order_index)
+          .order('order_index', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+      : await neighborQuery
+          .gt('order_index', target.order_index)
+          .order('order_index', { ascending: true })
+          .limit(1)
+          .maybeSingle()
+
+  if (!neighbor) return { ok: true } // ya está en el extremo
+
+  const a = await admin
+    .from('modules')
+    .update({ order_index: neighbor.order_index })
+    .eq('id', target.id)
+  if (a.error) return { ok: false, error: a.error.message }
+  const b = await admin
+    .from('modules')
+    .update({ order_index: target.order_index })
+    .eq('id', neighbor.id)
+  if (b.error) return { ok: false, error: b.error.message }
+  return { ok: true }
+}
+
 export async function deleteModule(moduleId: string): Promise<Result> {
   if (!(await ensureAdmin())) return { ok: false, error: 'No autorizado.' }
   const admin = createAdminClient()
@@ -157,6 +278,70 @@ export async function createLesson(moduleId: string, input: LessonInput): Promis
     transcript: input.transcript.trim() || null,
   })
   if (error) return { ok: false, error: error.message }
+  return { ok: true }
+}
+
+/**
+ * Edita los campos de estructura de una lección (título + tipo).
+ * Los campos de contenido (content_r2_key, transcript, duration_min) los maneja
+ * el Bloque 2, no este action.
+ */
+export async function updateLesson(
+  lessonId: string,
+  input: { title: string; content_type: string },
+): Promise<Result> {
+  if (!(await ensureAdmin())) return { ok: false, error: 'No autorizado.' }
+  if (!input.title.trim()) return { ok: false, error: 'El título es obligatorio.' }
+  const admin = createAdminClient()
+  const { error } = await admin
+    .from('lessons')
+    .update({ title: input.title.trim(), content_type: input.content_type })
+    .eq('id', lessonId)
+  return error ? { ok: false, error: error.message } : { ok: true }
+}
+
+export async function reorderLesson(
+  lessonId: string,
+  direction: 'up' | 'down',
+): Promise<Result> {
+  if (!(await ensureAdmin())) return { ok: false, error: 'No autorizado.' }
+  const admin = createAdminClient()
+  const { data: target } = await admin
+    .from('lessons')
+    .select('id, module_id, order_index')
+    .eq('id', lessonId)
+    .maybeSingle()
+  if (!target) return { ok: false, error: 'Lección no encontrada.' }
+
+  const neighborQuery = admin
+    .from('lessons')
+    .select('id, order_index')
+    .eq('module_id', target.module_id)
+  const { data: neighbor } =
+    direction === 'up'
+      ? await neighborQuery
+          .lt('order_index', target.order_index)
+          .order('order_index', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+      : await neighborQuery
+          .gt('order_index', target.order_index)
+          .order('order_index', { ascending: true })
+          .limit(1)
+          .maybeSingle()
+
+  if (!neighbor) return { ok: true }
+
+  const a = await admin
+    .from('lessons')
+    .update({ order_index: neighbor.order_index })
+    .eq('id', target.id)
+  if (a.error) return { ok: false, error: a.error.message }
+  const b = await admin
+    .from('lessons')
+    .update({ order_index: target.order_index })
+    .eq('id', neighbor.id)
+  if (b.error) return { ok: false, error: b.error.message }
   return { ok: true }
 }
 
