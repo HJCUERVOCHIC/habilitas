@@ -43,9 +43,14 @@ export async function getAdminUser(): Promise<User | null> {
   return isAdmin ? user : null
 }
 
-/** Para páginas /admin: redirige a quien no sea admin. */
+/**
+ * Para páginas /admin: distingue sin-sesión (→ /ingresar) de no-admin
+ * (→ /dashboard). SPEC-ROLES-ACCESO §1: un estudiante que intenta /admin
+ * vuelve a su propia área en lugar de ir a la landing.
+ */
 export async function requireAdminPage(): Promise<User> {
-  const user = await getAdminUser()
-  if (!user) redirect('/')
+  const { user, isAdmin } = await getSessionAndRole()
+  if (!user) redirect('/ingresar')
+  if (!isAdmin) redirect('/dashboard')
   return user
 }

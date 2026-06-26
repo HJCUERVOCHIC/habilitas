@@ -1,11 +1,11 @@
 // Asigna un rol a un usuario. Uso:
-//   npm run admin:grant -- correo@dominio.co [admin|student|instructor]
+//   npm run admin:grant -- correo@dominio.co [admin|student]
 import { createClient } from '@supabase/supabase-js'
 
 const email = process.argv[2]
 const role = process.argv[3] ?? 'admin'
 if (!email) {
-  console.error('✗ Uso: npm run admin:grant -- correo@dominio.co [admin|student|instructor]')
+  console.error('✗ Uso: npm run admin:grant -- correo@dominio.co [admin|student]')
   process.exit(1)
 }
 

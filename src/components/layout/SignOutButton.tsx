@@ -5,8 +5,14 @@ import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/Button'
 import { createClient } from '@/lib/supabase/client'
 
-/** Cierra la sesión (HABILITAS-ESPECIFICACION §5.7 RF-7.4). */
-export function SignOutButton() {
+type Variant = 'ghost' | 'outline-white' | 'dark'
+
+/**
+ * Cierra la sesión (HABILITAS-ESPECIFICACION §5.7 RF-7.4).
+ * `variant` permite adaptarlo al fondo del shell donde vive (claro = ghost,
+ * oscuro = outline-white / dark). Default mantiene el comportamiento previo.
+ */
+export function SignOutButton({ variant = 'ghost' }: { variant?: Variant }) {
   const router = useRouter()
 
   async function handleSignOut() {
@@ -17,7 +23,7 @@ export function SignOutButton() {
   }
 
   return (
-    <Button variant="ghost" size="sm" onClick={handleSignOut}>
+    <Button variant={variant} size="sm" onClick={handleSignOut}>
       Cerrar sesión
     </Button>
   )

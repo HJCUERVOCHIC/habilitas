@@ -395,7 +395,7 @@ try {
   const instructor = await getOrCreateUser('instructor.demo@habilitas.co', {
     full_name: 'Dra. Carolina Restrepo',
     profession: 'Médica especialista en medicina de urgencias',
-    role: 'instructor',
+    role: 'student',
     credential:
       'MD · Especialización en Medicina de Urgencias, Universidad CES (2014). Registro médico vigente.',
     bio:

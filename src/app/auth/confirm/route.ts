@@ -55,9 +55,34 @@ export async function GET(request: NextRequest) {
     errorMessage = 'enlace sin code ni token_hash (posible flujo implícito con #hash)'
   }
 
+  // Enrutamiento por rol (SPEC-ROLES-ACCESO §1). Tras autenticar, leemos el
+  // rol y decidimos destino:
+  //   admin → /admin (honra ?redirect= solo si apunta a /admin/*)
+  //   student → /dashboard (honra ?redirect= solo si NO apunta a /admin/*)
+  let destination = next
+  if (errorMessage === null) {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+    if (user) {
+      const { data: profile } = await supabase
+        .from('users')
+        .select('role')
+        .eq('id', user.id)
+        .maybeSingle()
+      const isAdmin = profile?.role === 'admin'
+      const requestedAdminPath = next.startsWith('/admin')
+      if (isAdmin) {
+        destination = requestedAdminPath ? next : '/admin'
+      } else {
+        destination = requestedAdminPath ? '/dashboard' : next
+      }
+    }
+  }
+
   const target =
     errorMessage === null
-      ? `${origin}${next}`
+      ? `${origin}${destination}`
       : `${origin}/ingresar?error=${encodeURIComponent('enlace-invalido')}`
 
   if (errorMessage) {

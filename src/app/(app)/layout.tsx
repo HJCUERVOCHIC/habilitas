@@ -18,10 +18,13 @@ export const dynamic = 'force-dynamic'
 export default async function AppShellLayout({ children }: { children: React.ReactNode }) {
   const { user, isAdmin, fullName } = await getSessionAndRole()
   if (!user) redirect('/ingresar')
+  // SPEC-ROLES-ACCESO §1: separación estricta — un admin nunca ve el área
+  // de estudiante. Se canaliza a su propio shell en /admin.
+  if (isAdmin) redirect('/admin')
 
   return (
     <div className="flex min-h-screen flex-col bg-mist">
-      <AppNav email={user.email ?? ''} fullName={fullName} isAdmin={isAdmin} />
+      <AppNav email={user.email ?? ''} fullName={fullName} />
       <main className="flex-1">{children}</main>
       <ComplianceFooter />
     </div>

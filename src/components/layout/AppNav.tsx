@@ -11,7 +11,6 @@ import { cn } from '@/lib/utils'
 interface AppNavProps {
   email: string
   fullName: string | null
-  isAdmin: boolean
 }
 
 interface NavItem {
@@ -20,13 +19,14 @@ interface NavItem {
 }
 
 /**
- * Topbar del shell autenticado (SPEC-NAVEGACION §2 entregable 2).
- * Color sólido, nunca gradiente (HABILITAS-STACK §6).
- * El ítem "Panel admin" depende de `isAdmin`, resuelto en servidor por
- * `getSessionAndRole`; la visibilidad de UI no sustituye el enforcement
- * del rol — /admin sigue protegido por `requireAdminPage`.
+ * Topbar del shell de estudiante (SPEC-NAVEGACION §2 entregable 2 +
+ * SPEC-ROLES-ACCESO §1). Color sólido, nunca gradiente (HABILITAS-STACK §6).
+ *
+ * Roles y acceso: el admin tiene su propio shell en /admin y se redirige
+ * antes de llegar aquí (ver (app)/layout.tsx). Por eso este menú no
+ * contiene un enlace al panel admin.
  */
-export function AppNav({ email, fullName, isAdmin }: AppNavProps) {
+export function AppNav({ email, fullName }: AppNavProps) {
   const [open, setOpen] = useState(false)
   const items: NavItem[] = [
     { href: '/dashboard', label: 'Dashboard' },
@@ -34,7 +34,6 @@ export function AppNav({ email, fullName, isAdmin }: AppNavProps) {
     { href: '/mis-cursos', label: 'Mis cursos' },
     { href: '/perfil', label: 'Perfil' },
   ]
-  if (isAdmin) items.push({ href: '/admin', label: 'Panel admin' })
 
   const displayName = fullName?.trim() || email
 
