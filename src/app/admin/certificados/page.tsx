@@ -11,7 +11,7 @@ export default async function AdminCertificadosPage() {
   const { data: certs } = await admin
     .from('certificates')
     .select(
-      'cert_id, verification_id, professional_name, status, expires_at, score, course_id',
+      'cert_id, verification_id, professional_name, status, expires_at, score, course_id, issued_at',
     )
     .order('issued_at', { ascending: false })
 
@@ -26,6 +26,7 @@ export default async function AdminCertificadosPage() {
     verification_id: c.verification_id,
     professional_name: c.professional_name,
     status: c.status,
+    issued_at: c.issued_at,
     expires_at: c.expires_at,
     score: c.score,
     courseTitle: titleById.get(c.course_id) ?? 'Curso',

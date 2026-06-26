@@ -43,7 +43,24 @@ export default async function AdminCursosPage() {
                 {isCategory(course.category) ? CATEGORY_LABELS[course.category] : course.category}
               </p>
             </div>
-            <PublishToggle courseId={course.id} published={course.published} />
+            {course.published ? (
+              // Publicado: permite despublicar rápido desde la lista.
+              <PublishToggle courseId={course.id} published={true} />
+            ) : (
+              // Borrador: dirige al detalle, donde vive el checklist completo
+              // y el botón "Publicar" (SPEC-PUBLICACION-CONSTANCIAS §1).
+              <div className="flex items-center gap-3">
+                <span className="rounded-md bg-mist px-2.5 py-1 text-xs font-semibold text-ink-soft">
+                  Borrador
+                </span>
+                <Link
+                  href={`/admin/cursos/${course.slug}`}
+                  className="text-sm font-medium text-teal hover:text-teal-light"
+                >
+                  Configurar para publicar →
+                </Link>
+              </div>
+            )}
           </div>
         ))}
         {(courses ?? []).length === 0 && (

@@ -15,9 +15,14 @@ export interface AdminCert {
   verification_id: string | null
   professional_name: string
   status: string
+  issued_at: string
   expires_at: string
   score: number
   courseTitle: string
+}
+
+function formatDate(iso: string): string {
+  return new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium' }).format(new Date(iso))
 }
 
 const TEXT: Record<CertStatus, string> = {
@@ -72,7 +77,7 @@ function CertRow({ cert }: { cert: AdminCert }) {
             <span className="font-mono text-sm">{cert.cert_id}</span> · {cert.professional_name}
           </p>
           <p className="text-sm text-ink-soft">
-            {cert.courseTitle} · {cert.score}% ·{' '}
+            {cert.courseTitle} · {cert.score}% · emitida {formatDate(cert.issued_at)} ·{' '}
             <span className={cn('font-medium', TEXT[status])}>{CERT_STATUS_META[status].label}</span>
           </p>
         </div>

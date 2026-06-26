@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation'
 
 import { ArchiveCourseButton } from '@/components/admin/ArchiveCourseButton'
 import { CourseForm } from '@/components/admin/CourseForm'
-import { PublishToggle } from '@/components/admin/PublishToggle'
+import { PublishPanel } from '@/components/admin/PublishPanel'
 import { createAdminClient } from '@/lib/supabase/admin'
 import type { CourseInput } from '@/app/admin/actions'
 
@@ -14,7 +14,7 @@ export default async function EditarCursoPage({ params }: { params: { slug: stri
   const { data: course } = await admin
     .from('courses')
     .select(
-      'id, slug, title, subtitle, description, category, difficulty, duration_hours, cert_validity_days, pass_score, max_attempts, learning_objectives, published',
+      'id, slug, title, subtitle, description, category, difficulty, duration_hours, cert_validity_days, pass_score, max_attempts, learning_objectives, published, published_at',
     )
     .eq('slug', params.slug)
     .maybeSingle()
@@ -53,10 +53,7 @@ export default async function EditarCursoPage({ params }: { params: { slug: stri
 
   return (
     <div>
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <h1 className="font-display text-display-md text-charcoal">{course.title}</h1>
-        <PublishToggle courseId={course.id} published={course.published} />
-      </div>
+      <h1 className="font-display text-display-md text-charcoal">{course.title}</h1>
 
       <div className="mt-4 flex flex-wrap gap-4">
         <Link
@@ -71,6 +68,14 @@ export default async function EditarCursoPage({ params }: { params: { slug: stri
         >
           Evaluación · banco de preguntas ({questionCount ?? 0})
         </Link>
+      </div>
+
+      <div className="mt-6">
+        <PublishPanel
+          courseId={course.id}
+          published={course.published}
+          publishedAt={course.published_at}
+        />
       </div>
 
       <div className="mt-6">

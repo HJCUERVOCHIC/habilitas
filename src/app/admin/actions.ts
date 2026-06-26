@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 
+import { getPublishChecklist } from '@/lib/publish-checklist'
 import { getAdminUser } from '@/lib/require-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
 
@@ -139,29 +140,31 @@ export async function setPublished(courseId: string, published: boolean): Promis
   if (!(await ensureAdmin())) return { ok: false, error: 'No autorizado.' }
   const admin = createAdminClient()
 
-  // Regla (§5.8 CA): un curso sin evaluación (con preguntas) no se publica.
+  // SPEC-PUBLICACION-CONSTANCIAS §2 CA-2: publicar exige checklist completo.
+  // Despublicar es libre (reversible y solo retira del catálogo).
   if (published) {
-    const { data: evaluation } = await admin
-      .from('evaluations')
-      .select('id')
-      .eq('course_id', courseId)
-      .maybeSingle()
-    if (!evaluation) {
-      return { ok: false, error: 'El curso necesita una evaluación antes de publicarse.' }
-    }
-    const { count } = await admin
-      .from('questions')
-      .select('*', { count: 'exact', head: true })
-      .eq('evaluation_id', evaluation.id)
-    if (!count || count === 0) {
-      return { ok: false, error: 'La evaluación necesita al menos una pregunta.' }
+    const checklist = await getPublishChecklist(courseId)
+    if (!checklist.canPublish) {
+      const missing = checklist.items
+        .filter((i) => !i.passed)
+        .map((i) => i.label)
+        .join(', ')
+      return {
+        ok: false,
+        error: `El curso aún no cumple los requisitos para publicarse (${missing}). Revisa el checklist en el detalle del curso.`,
+      }
     }
   }
 
-  const { error } = await admin
-    .from('courses')
-    .update({ published, updated_at: new Date().toISOString() })
-    .eq('id', courseId)
+  const now = new Date().toISOString()
+  const update: { published: boolean; updated_at: string; published_at?: string } = {
+    published,
+    updated_at: now,
+  }
+  // Al publicar registramos la marca; al despublicar conservamos el histórico.
+  if (published) update.published_at = now
+
+  const { error } = await admin.from('courses').update(update).eq('id', courseId)
   if (error) return { ok: false, error: error.message }
   revalidatePath('/admin/cursos')
   revalidatePath('/certificaciones')
