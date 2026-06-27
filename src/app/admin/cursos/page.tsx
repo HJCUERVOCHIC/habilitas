@@ -19,11 +19,16 @@ export default async function AdminCursosPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="font-display text-display-md text-charcoal">Cursos</h1>
-        <Button asChild variant="primary">
-          <Link href="/admin/cursos/nuevo">Nuevo curso</Link>
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button asChild variant="ghost" size="sm">
+            <Link href="/admin/cursos/importar">Importar YAML</Link>
+          </Button>
+          <Button asChild variant="primary">
+            <Link href="/admin/cursos/nuevo">Nuevo curso</Link>
+          </Button>
+        </div>
       </div>
 
       <div className="mt-6 space-y-3">
