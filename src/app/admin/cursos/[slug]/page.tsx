@@ -11,14 +11,25 @@ export const dynamic = 'force-dynamic'
 
 export default async function EditarCursoPage({ params }: { params: { slug: string } }) {
   const admin = createAdminClient()
-  const { data: course } = await admin
+  const { data: course, error: courseError } = await admin
     .from('courses')
     .select(
       'id, slug, title, subtitle, description, category, difficulty, duration_hours, cert_validity_days, pass_score, max_attempts, learning_objectives, published, published_at',
     )
     .eq('slug', params.slug)
     .maybeSingle()
-  if (!course) notFound()
+  if (courseError) {
+    console.error('[admin/cursos/[slug]] error en consulta de curso:', courseError.message, {
+      slug: params.slug,
+    })
+    notFound()
+  }
+  if (!course) {
+    console.error('[admin/cursos/[slug]] curso no encontrado por slug', {
+      slug: params.slug,
+    })
+    notFound()
+  }
 
   const { count: moduleCount } = await admin
     .from('modules')
