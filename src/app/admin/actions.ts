@@ -4,7 +4,31 @@ import { revalidatePath } from 'next/cache'
 
 import { getPublishChecklist } from '@/lib/publish-checklist'
 import { getAdminUser } from '@/lib/require-admin'
+import { slugify } from '@/lib/slug'
 import { createAdminClient } from '@/lib/supabase/admin'
+
+/**
+ * Devuelve un slug único en public.courses partiendo de `base`. Si está libre
+ * lo retorna tal cual; si no, anexa -2, -3… hasta encontrar uno disponible.
+ * TOCTOU aceptable en flujo admin de baja concurrencia; la UNIQUE constraint
+ * de la columna es el cerrojo final.
+ */
+async function nextUniqueSlug(
+  admin: ReturnType<typeof createAdminClient>,
+  base: string,
+): Promise<string> {
+  let candidate = base
+  let n = 2
+  while (true) {
+    const { data } = await admin
+      .from('courses')
+      .select('id')
+      .eq('slug', candidate)
+      .maybeSingle()
+    if (!data) return candidate
+    candidate = `${base}-${n++}`
+  }
+}
 
 type Result = { ok: boolean; error?: string }
 
@@ -28,12 +52,20 @@ async function ensureAdmin(): Promise<boolean> {
 
 export async function createCourse(input: CourseInput): Promise<Result & { slug?: string }> {
   if (!(await ensureAdmin())) return { ok: false, error: 'No autorizado.' }
-  if (!input.slug.trim() || !input.title.trim()) {
-    return { ok: false, error: 'Slug y título son obligatorios.' }
+  if (!input.title.trim()) {
+    return { ok: false, error: 'El título es obligatorio.' }
+  }
+  // El slug se normaliza en el servidor (fuente de verdad); el form lo
+  // muestra preview-normalizado pero el servidor reaplica para garantizar
+  // que la URL sea URL-safe y coincida con el redirect tras crear.
+  const base = slugify(input.slug || input.title)
+  if (!base) {
+    return { ok: false, error: 'No se pudo generar un slug a partir del título.' }
   }
   const admin = createAdminClient()
+  const slug = await nextUniqueSlug(admin, base)
   const { error } = await admin.from('courses').insert({
-    slug: input.slug.trim(),
+    slug,
     title: input.title.trim(),
     subtitle: input.subtitle.trim() || null,
     description: input.description.trim() || null,
@@ -48,7 +80,7 @@ export async function createCourse(input: CourseInput): Promise<Result & { slug?
   })
   if (error) return { ok: false, error: error.message }
   revalidatePath('/admin/cursos')
-  return { ok: true, slug: input.slug.trim() }
+  return { ok: true, slug }
 }
 
 export async function updateCourse(courseId: string, input: CourseInput): Promise<Result> {

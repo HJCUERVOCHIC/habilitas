@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { createCourse, updateCourse, type CourseInput } from '@/app/admin/actions'
 import { Button } from '@/components/ui/Button'
 import { CATEGORIES, CATEGORY_LABELS } from '@/lib/categories'
+import { slugify } from '@/lib/slug'
 
 const FIELD =
   'w-full rounded-md border border-border bg-white px-3 py-2 text-ink-main outline-none focus:border-teal focus:ring-2 focus:ring-ring'
@@ -36,11 +37,34 @@ export function CourseForm({ mode, courseId, initial }: CourseFormProps) {
   const router = useRouter()
   const [form, setForm] = useState<CourseInput>(initial ?? EMPTY)
   const [objectivesText, setObjectivesText] = useState((initial?.learning_objectives ?? []).join('\n'))
+  // En edición el slug no se toca (input disabled); en creación, mientras el
+  // usuario no escriba manualmente en el campo, el slug refleja la
+  // normalización del título.
+  const [slugDirty, setSlugDirty] = useState(mode === 'edit')
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
 
   function set<K extends keyof CourseInput>(key: K, value: CourseInput[K]) {
     setForm((f) => ({ ...f, [key]: value }))
+  }
+
+  function handleTitleChange(value: string) {
+    setForm((f) => ({
+      ...f,
+      title: value,
+      slug: slugDirty ? f.slug : slugify(value),
+    }))
+  }
+
+  function handleSlugChange(value: string) {
+    if (!slugDirty) setSlugDirty(true)
+    set('slug', value)
+  }
+
+  function handleSlugBlur() {
+    // Normaliza al perder foco para que el usuario vea exactamente lo que
+    // el servidor persistirá (la fuente de verdad sigue siendo el server).
+    set('slug', slugify(form.slug))
   }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -49,6 +73,7 @@ export function CourseForm({ mode, courseId, initial }: CourseFormProps) {
     setMessage('')
     const payload: CourseInput = {
       ...form,
+      slug: mode === 'create' ? slugify(form.slug || form.title) : form.slug,
       learning_objectives: objectivesText
         .split('\n')
         .map((l) => l.trim())
@@ -60,7 +85,7 @@ export function CourseForm({ mode, courseId, initial }: CourseFormProps) {
         : await updateCourse(courseId ?? '', payload)
     setSaving(false)
     if (res.ok) {
-      const slug = 'slug' in res && res.slug ? res.slug : form.slug
+      const slug = 'slug' in res && res.slug ? res.slug : payload.slug
       router.push(`/admin/cursos/${slug}`)
       router.refresh()
     } else {
@@ -73,14 +98,20 @@ export function CourseForm({ mode, courseId, initial }: CourseFormProps) {
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="block text-sm">
           <span className="mb-1 block font-medium text-ink-main">Título *</span>
-          <input className={FIELD} value={form.title} onChange={(e) => set('title', e.target.value)} required />
+          <input
+            className={FIELD}
+            value={form.title}
+            onChange={(e) => handleTitleChange(e.target.value)}
+            required
+          />
         </label>
         <label className="block text-sm">
           <span className="mb-1 block font-medium text-ink-main">Slug *</span>
           <input
             className={FIELD}
             value={form.slug}
-            onChange={(e) => set('slug', e.target.value)}
+            onChange={(e) => handleSlugChange(e.target.value)}
+            onBlur={handleSlugBlur}
             disabled={mode === 'edit'}
             required
           />
