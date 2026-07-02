@@ -17,13 +17,18 @@ export default async function MisCursosPage() {
   } = await supabase.auth.getUser()
   if (!user) redirect('/ingresar?redirect=/mis-cursos')
 
-  const [{ data: enrollments }, { data: progressRows }] = await Promise.all([
+  const [{ data: enrollments }, { data: progressRows }, { data: certs }] = await Promise.all([
     supabase
       .from('enrollments')
       .select('course_id, enrolled_at')
       .eq('user_id', user.id)
       .order('enrolled_at', { ascending: false }),
     supabase.from('course_progress').select('course_id, progress_pct').eq('user_id', user.id),
+    supabase
+      .from('certificates')
+      .select('course_id, verification_id, cert_id')
+      .eq('user_id', user.id)
+      .neq('status', 'revoked'),
   ])
 
   const courseIds = (enrollments ?? []).map((e) => e.course_id)
@@ -34,6 +39,11 @@ export default async function MisCursosPage() {
   const courseById = new Map((courses ?? []).map((c) => [c.id, c]))
   const progressByCourse = new Map(
     (progressRows ?? []).map((p) => [p.course_id, p.progress_pct ?? 0]),
+  )
+  // Enlace a la constancia por curso (SPEC-CONSTANCIA-PERFIL §1.4). Prefiere
+  // el token inadivinable; cae a cert_id solo por compatibilidad legacy.
+  const certByCourse = new Map(
+    (certs ?? []).map((c) => [c.course_id, c.verification_id ?? c.cert_id]),
   )
 
   return (
@@ -50,6 +60,7 @@ export default async function MisCursosPage() {
           {enrollments.map((enrollment) => {
             const course = courseById.get(enrollment.course_id)
             const pct = progressByCourse.get(enrollment.course_id) ?? 0
+            const certToken = certByCourse.get(enrollment.course_id)
             if (!course) return null
             return (
               <div
@@ -74,6 +85,16 @@ export default async function MisCursosPage() {
                   </div>
                   <span className="text-xs text-ink-soft">{pct}%</span>
                 </div>
+                {certToken && (
+                  <div className="mt-3 flex items-center justify-end">
+                    <Link
+                      href={`/verificar/${certToken}`}
+                      className="text-sm font-medium text-teal hover:text-teal-light"
+                    >
+                      Ver constancia →
+                    </Link>
+                  </div>
+                )}
               </div>
             )
           })}

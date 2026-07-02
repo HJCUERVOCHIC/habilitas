@@ -2,6 +2,7 @@
 
 import { randomUUID } from 'node:crypto'
 
+import { certificateExpiresAt } from '@/lib/certificate'
 import { sendCertificateEmail } from '@/lib/email'
 import {
   QUESTIONS_PER_ATTEMPT,
@@ -265,6 +266,12 @@ export async function getEvaluationPageState(slug: string): Promise<EvalPageStat
       const q = qrows.get(qid)
       return q && answers[qid] === q.correct_option ? n + 1 : n
     }, 0)
+
+    // Backfill perezoso (SPEC-CONSTANCIA-PERFIL §1.1): si el aprobado se
+    // registró antes de que existiera la emisión automática, emitirla ahora.
+    // La operación es idempotente.
+    const emission = await emitCertificate(passedRow.id)
+
     return {
       status: 'passed',
       courseTitle: course.title,
@@ -276,6 +283,8 @@ export async function getEvaluationPageState(slug: string): Promise<EvalPageStat
       correct,
       total: questionIds.length,
       timeSpentSec: 0,
+      verificationId: emission.ok ? emission.verificationId : null,
+      certId: emission.ok ? emission.certId : null,
     }
   }
 
@@ -523,7 +532,19 @@ export async function submitAttempt(
   }
 
   if (passed) {
-    return { ...base, review: buildReview(questionIds, qrows, finalAnswers) }
+    // Aprobado → emisión automática e idempotente de la constancia
+    // (SPEC-CONSTANCIA-PERFIL §1.1). Se ignora un fallo: la vista de
+    // aprobación funciona igual y el backfill de /perfil recuperará el caso.
+    const emission = await emitCertificate(attemptId)
+    const certExtras =
+      emission.ok
+        ? { verificationId: emission.verificationId, certId: emission.certId }
+        : { verificationId: null, certId: null }
+    return {
+      ...base,
+      review: buildReview(questionIds, qrows, finalAnswers),
+      ...certExtras,
+    }
   }
 
   const topics: string[] = []
@@ -553,15 +574,22 @@ export async function submitAttempt(
   return { ...base, topics, ...extras }
 }
 
+export type EmitCertificateResult =
+  | { ok: true; certId: string; verificationId: string }
+  | { ok: false; reason: string }
+
 /**
- * Emite la constancia asociada al intento aprobado (E4). Se mantiene aquí por
- * cercanía con el intento; el bloque E3 no la invoca desde su UI, pero el
- * bloque E4 la reutilizará. Idempotente: un intento aprobado emite un solo
- * certificado.
+ * Emite la constancia asociada al intento aprobado (SPEC-CONSTANCIA-PERFIL
+ * §1.1). Idempotente en dos niveles:
+ *  1. Por `(user_id, course_id)`: si el usuario ya tiene una constancia para
+ *     este curso (aunque venga de otro intento), la reutiliza.
+ *  2. Por `eval_attempt_id` (UNIQUE en DB): defensa ante race conditions.
+ *
+ * La vigencia arranca en la emisión (`issued_at + cert_validity_days`).
+ * `verification_id` es UUID v4 inadivinable — la URL pública usa este token
+ * y nunca el `cert_id` legible (que existe solo para soporte y el documento).
  */
-export async function emitCertificate(
-  attemptId: string,
-): Promise<{ ok: true; certId: string } | { ok: false; reason: string }> {
+export async function emitCertificate(attemptId: string): Promise<EmitCertificateResult> {
   const supabase = createClient()
   const {
     data: { user },
@@ -578,12 +606,19 @@ export async function emitCertificate(
 
   const admin = createAdminClient()
 
-  const { data: existing } = await admin
+  // Idempotencia (a): por intento — cubre re-emisión del mismo attempt.
+  const { data: byAttempt } = await admin
     .from('certificates')
-    .select('cert_id')
+    .select('cert_id, verification_id')
     .eq('eval_attempt_id', attemptId)
     .maybeSingle()
-  if (existing) return { ok: true, certId: existing.cert_id }
+  if (byAttempt) {
+    return {
+      ok: true,
+      certId: byAttempt.cert_id,
+      verificationId: byAttempt.verification_id ?? byAttempt.cert_id,
+    }
+  }
 
   const { data: evaluation } = await admin
     .from('evaluations')
@@ -591,6 +626,26 @@ export async function emitCertificate(
     .eq('id', attempt.evaluation_id)
     .maybeSingle()
   if (!evaluation) return { ok: false, reason: 'not-found' }
+
+  // Idempotencia (b): por (user_id, course_id) — spec §1.1 "una sola por
+  // user+course, aunque venga de otro intento aprobado".
+  const { data: byUserCourse } = await admin
+    .from('certificates')
+    .select('cert_id, verification_id')
+    .eq('user_id', attempt.user_id)
+    .eq('course_id', evaluation.course_id)
+    .neq('status', 'revoked')
+    .order('issued_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (byUserCourse) {
+    return {
+      ok: true,
+      certId: byUserCourse.cert_id,
+      verificationId: byUserCourse.verification_id ?? byUserCourse.cert_id,
+    }
+  }
+
   const { data: course } = await admin
     .from('courses')
     .select('id, title, cert_validity_days, instructor_id, duration_hours')
@@ -615,7 +670,7 @@ export async function emitCertificate(
   if (rpcError || !certId) return { ok: false, reason: 'cert-id' }
 
   const issuedAt = new Date()
-  const expiresAt = new Date(issuedAt.getTime() + course.cert_validity_days * 86_400_000)
+  const expiresAt = certificateExpiresAt(issuedAt, course.cert_validity_days ?? 365)
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? ''
   const verificationId = randomUUID()
   const verifyUrl = `${siteUrl}/verificar/${verificationId}`
@@ -628,7 +683,7 @@ export async function emitCertificate(
     eval_attempt_id: attempt.id,
     score: attempt.score ?? 0,
     status: 'valid',
-    expires_at: expiresAt.toISOString(),
+    expires_at: expiresAt,
     professional_name: professional?.full_name ?? 'Profesional de la salud',
     professional_profession: professional?.profession ?? null,
     instructor_name: instructor?.full_name ?? null,
@@ -643,10 +698,10 @@ export async function emitCertificate(
     professionalName: professional?.full_name ?? 'Profesional',
     courseTitle: course.title,
     score: attempt.score ?? 0,
-    expiresAt: expiresAt.toISOString(),
+    expiresAt,
     certId,
     verifyUrl,
   })
 
-  return { ok: true, certId }
+  return { ok: true, certId, verificationId }
 }

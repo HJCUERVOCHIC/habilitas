@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 
+import { emitCertificate } from '@/app/curso/[slug]/eval-actions'
 import { CertListCard, type CertListItem } from '@/components/cert/CertListCard'
 import { createClient } from '@/lib/supabase/server'
 
@@ -13,6 +14,9 @@ export const dynamic = 'force-dynamic'
 
 export const metadata = { title: 'Mi perfil — Habilitas' }
 
+const CERT_COLUMNS =
+  'cert_id, verification_id, status, expires_at, score, issued_at, course_id, duration_hours, eval_attempt_id'
+
 export default async function PerfilPage() {
   const supabase = createClient()
   const {
@@ -20,7 +24,7 @@ export default async function PerfilPage() {
   } = await supabase.auth.getUser()
   if (!user) redirect('/ingresar?redirect=/perfil')
 
-  const [{ data: profile }, { data: certs }] = await Promise.all([
+  const [{ data: profile }, initialCerts] = await Promise.all([
     supabase
       .from('users')
       .select('full_name, profession, city, rethus_number, avatar_url')
@@ -34,12 +38,41 @@ export default async function PerfilPage() {
       }>(),
     supabase
       .from('certificates')
-      .select(
-        'cert_id, verification_id, status, expires_at, score, issued_at, course_id, duration_hours',
-      )
+      .select(CERT_COLUMNS)
       .eq('user_id', user.id)
       .order('issued_at', { ascending: false }),
   ])
+
+  // Backfill perezoso (SPEC-CONSTANCIA-PERFIL §1.1): si el estudiante aprobó
+  // algún intento antes de la auto-emisión de E4, emitir la constancia ahora.
+  // Idempotente: `emitCertificate` reutiliza si ya existe.
+  const certAttemptIds = new Set(
+    (initialCerts.data ?? [])
+      .map((c) => c.eval_attempt_id)
+      .filter((id): id is string => id !== null),
+  )
+  const { data: passedAttempts } = await supabase
+    .from('eval_attempts')
+    .select('id')
+    .eq('user_id', user.id)
+    .eq('passed', true)
+    .not('submitted_at', 'is', null)
+  const missing = (passedAttempts ?? [])
+    .map((a) => a.id)
+    .filter((id) => !certAttemptIds.has(id))
+
+  let certs = initialCerts.data
+  if (missing.length > 0) {
+    for (const attemptId of missing) {
+      await emitCertificate(attemptId)
+    }
+    const { data: refreshed } = await supabase
+      .from('certificates')
+      .select(CERT_COLUMNS)
+      .eq('user_id', user.id)
+      .order('issued_at', { ascending: false })
+    certs = refreshed
+  }
 
   const courseIds = Array.from(new Set((certs ?? []).map((c) => c.course_id)))
   const { data: courses } = courseIds.length

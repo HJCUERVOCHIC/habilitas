@@ -299,6 +299,7 @@ function NoBankScreen({ state }: { state: NoBankState }) {
 
 function PassedScreen({ state }: { state: PassedState }) {
   const date = new Date(state.submittedAt)
+  const token = state.verificationId ?? state.certId
   return (
     <Shell slug={state.slug} title={state.courseTitle}>
       <h1 className="mb-2 font-display text-display-md text-charcoal">Evaluación aprobada</h1>
@@ -312,6 +313,13 @@ function PassedScreen({ state }: { state: PassedState }) {
           <p className="mt-1 text-xs text-ink-muted">
             {date.toLocaleString('es-CO', { dateStyle: 'medium', timeStyle: 'short' })}
           </p>
+          {token && (
+            <div className="mt-6">
+              <Button variant="primary" size="sm" asChild>
+                <Link href={`/verificar/${token}`}>Ver constancia →</Link>
+              </Button>
+            </div>
+          )}
         </div>
       </Card>
 
@@ -580,6 +588,16 @@ function ResultScreen({
             </p>
           )}
         </div>
+
+        {result.passed && (result.verificationId || result.certId) && (
+          <div className="mt-6 flex justify-center">
+            <Button variant="primary" size="sm" asChild>
+              <Link href={`/verificar/${result.verificationId ?? result.certId}`}>
+                Ver constancia →
+              </Link>
+            </Button>
+          </div>
+        )}
 
         {result.passed && result.review && (
           <div className="mt-8">

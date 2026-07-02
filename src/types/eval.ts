@@ -53,6 +53,9 @@ export type EvalPageState =
       correct: number
       total: number
       timeSpentSec: number
+      /** Token público inadivinable (o cert_id legible como fallback legacy). */
+      verificationId: string | null
+      certId: string | null
     }
   | {
       status: 'active'
@@ -127,5 +130,9 @@ export type EvalSubmit =
       unlockAt?: string
       /** True si el envío llegó fuera de la ventana de 20 min. */
       timedOut: boolean
+      /** Solo si aprobó — token público de la constancia emitida (o `null` si
+       *  la emisión falló; la vista sigue mostrando el aprobado). */
+      verificationId?: string | null
+      certId?: string | null
     }
   | { ok: false; reason: 'auth' | 'not-found' | 'already-submitted' }
