@@ -5,10 +5,13 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 
 /**
- * Inscribe al usuario en el curso (HABILITAS-ESPECIFICACION §5.3 RF-3.7).
- * - Sin sesión → flujo Magic Link, volviendo al detalle (RF-9.3 / §5.9 CA).
- * - Con sesión → crea la inscripción (idempotente por unique(user_id, course_id))
- *   y redirige al reproductor del curso.
+ * Inscribe al usuario en el curso (SPEC-CATALOGO-INSCRIPCION §1.3).
+ * - Sin sesión → Magic Link, volviendo al detalle.
+ * - Con sesión de admin → roles excluyentes (Bloque 0): redirige a /admin.
+ * - Con sesión de estudiante → upsert idempotente por unique(user_id, course_id)
+ *   y redirige al reproductor.
+ * - Solo cursos publicados; RLS `enrollments_own` garantiza que la fila
+ *   pertenezca al usuario.
  */
 export async function enrollCourse(formData: FormData) {
   const slug = String(formData.get('slug') ?? '')
@@ -23,6 +26,16 @@ export async function enrollCourse(formData: FormData) {
     redirect(`/ingresar?redirect=${encodeURIComponent(`/certificaciones/${slug}`)}`)
   }
 
+  // Rol excluyente: admin no se inscribe (Bloque 0, SPEC-ROLES-ACCESO).
+  const { data: profile } = await supabase
+    .from('users')
+    .select('role')
+    .eq('id', user.id)
+    .maybeSingle()
+  if (profile?.role === 'admin') {
+    redirect('/admin')
+  }
+
   const { data: course } = await supabase
     .from('courses')
     .select('id')
@@ -32,7 +45,7 @@ export async function enrollCourse(formData: FormData) {
 
   if (!course) redirect('/certificaciones')
 
-  // Idempotente: si ya está inscrito, no duplica (DO NOTHING).
+  // Idempotente: si ya está inscrito, no duplica (DO NOTHING sobre el UNIQUE).
   await supabase
     .from('enrollments')
     .upsert(

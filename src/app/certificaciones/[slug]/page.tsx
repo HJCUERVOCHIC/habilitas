@@ -6,19 +6,16 @@ import { ModalityBadge } from '@/components/compliance/ModalityBadge'
 import { CategoryBadge, DifficultyDots } from '@/components/ui/Badge'
 import { Topbar } from '@/components/layout/Topbar'
 import { isCategory } from '@/lib/categories'
-import { createPublicClient } from '@/lib/supabase/public'
+import { createClient } from '@/lib/supabase/server'
 
-// Detalle de certificación (ISR, revalida 1h).
-export const revalidate = 3600
-
-export async function generateStaticParams() {
-  const supabase = createPublicClient()
-  const { data } = await supabase.from('courses').select('slug').eq('published', true)
-  return (data ?? []).map((course) => ({ slug: course.slug }))
-}
+// Detalle del curso (SPEC-CATALOGO-INSCRIPCION §1.2). Dinámico porque el CTA
+// depende del estado del usuario (visitante / inscrito / admin); se lee
+// sesión e inscripción con el cliente autenticado. RLS: courses_public_read
+// filtra borradores, enrollments_own restringe la inscripción a la del user.
+export const dynamic = 'force-dynamic'
 
 export default async function DetalleCursoPage({ params }: { params: { slug: string } }) {
-  const supabase = createPublicClient()
+  const supabase = createClient()
 
   const { data: course } = await supabase
     .from('courses')
@@ -28,6 +25,27 @@ export default async function DetalleCursoPage({ params }: { params: { slug: str
     .maybeSingle()
 
   if (!course) notFound()
+
+  // Estado del usuario para decidir el CTA del PurchaseCard.
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  let enrolled = false
+  let isAdmin = false
+  if (user) {
+    const [{ data: profile }, { data: enrollment }] = await Promise.all([
+      supabase.from('users').select('role').eq('id', user.id).maybeSingle(),
+      supabase
+        .from('enrollments')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('course_id', course.id)
+        .maybeSingle(),
+    ])
+    isAdmin = profile?.role === 'admin'
+    enrolled = Boolean(enrollment)
+  }
 
   const [{ data: modules }, { data: evaluation }] = await Promise.all([
     supabase
@@ -175,7 +193,12 @@ export default async function DetalleCursoPage({ params }: { params: { slug: str
 
           {/* Sidebar */}
           <aside className="space-y-6">
-            <PurchaseCard slug={course.slug} validityDays={course.cert_validity_days} />
+            <PurchaseCard
+              slug={course.slug}
+              validityDays={course.cert_validity_days}
+              enrolled={enrolled}
+              isAdmin={isAdmin}
+            />
 
             <div className="rounded-lg border border-border bg-white p-6 shadow-sm">
               <h3 className="text-sm font-semibold uppercase tracking-wide text-ink-muted">

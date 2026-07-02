@@ -1,4 +1,5 @@
 import { CatalogClient } from '@/components/cert/CatalogClient'
+import { ComplianceNotice } from '@/components/compliance/ComplianceNotice'
 import { Topbar } from '@/components/layout/Topbar'
 import { createPublicClient } from '@/lib/supabase/public'
 
@@ -18,6 +19,8 @@ export default async function CertificacionesPage() {
     .eq('published', true)
     .order('title')
 
+  const list = courses ?? []
+
   return (
     <>
       <Topbar />
@@ -28,7 +31,29 @@ export default async function CertificacionesPage() {
             Aprende habilidades clínicas y comparte una constancia verificable en segundos.
           </p>
           <div className="mt-8">
-            <CatalogClient courses={courses ?? []} />
+            {list.length === 0 ? (
+              <div className="rounded-lg border border-border bg-white p-10 text-center shadow-sm">
+                <h2 className="font-display text-2xl text-charcoal">
+                  Aún no hay cursos publicados
+                </h2>
+                <p className="mx-auto mt-2 max-w-md text-sm text-ink-soft">
+                  Estamos preparando los primeros cursos. Vuelve pronto o escríbenos a{' '}
+                  <a
+                    href="mailto:soporte@habilitas.co"
+                    className="font-medium text-teal hover:text-teal-light"
+                  >
+                    soporte@habilitas.co
+                  </a>{' '}
+                  para avisarte cuando arranquemos.
+                </p>
+              </div>
+            ) : (
+              <CatalogClient courses={list} />
+            )}
+          </div>
+
+          <div className="mt-10">
+            <ComplianceNotice variant="inline" />
           </div>
         </div>
       </main>

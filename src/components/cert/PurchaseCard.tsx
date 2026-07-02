@@ -1,11 +1,25 @@
+import Link from 'next/link'
+
 import { enrollCourse } from '@/app/certificaciones/[slug]/actions'
 import { Button } from '@/components/ui/Button'
 
+interface PurchaseCardProps {
+  slug: string
+  validityDays: number
+  /** True si el usuario autenticado ya está inscrito en este curso. */
+  enrolled?: boolean
+  /** True si el usuario autenticado es admin (roles excluyentes, Bloque 0). */
+  isAdmin?: boolean
+}
+
 /**
- * Purchase card — variante MVP (D2): precio etiquetado "Gratis durante el
- * lanzamiento", CTA "Comenzar curso", SIN sello de "pago seguro".
+ * Card de inscripción del detalle (SPEC-CATALOGO-INSCRIPCION §1.2):
+ *   - Visitante o estudiante no inscrito → "Inscribirme" (server action).
+ *   - Estudiante ya inscrito → "Continuar curso" (link al reproductor).
+ *   - Admin → aviso de rol excluyente.
+ * Precio siempre etiquetado "Gratis durante el lanzamiento" (D2).
  */
-export function PurchaseCard({ slug, validityDays }: { slug: string; validityDays: number }) {
+export function PurchaseCard({ slug, validityDays, enrolled, isAdmin }: PurchaseCardProps) {
   const validityMonths = Math.round(validityDays / 30)
   const inclusions = [
     'Acceso completo al contenido del curso',
@@ -28,15 +42,47 @@ export function PurchaseCard({ slug, validityDays }: { slug: string; validityDay
         ))}
       </ul>
 
-      <form action={enrollCourse} className="mt-6">
-        <input type="hidden" name="slug" value={slug} />
-        <Button type="submit" variant="primary" size="lg" className="w-full">
-          Comenzar curso
-        </Button>
-      </form>
+      <div className="mt-6">
+        {isAdmin ? (
+          <AdminNotice slug={slug} />
+        ) : enrolled ? (
+          <Button asChild variant="primary" size="lg" className="w-full">
+            <Link href={`/curso/${slug}`}>Continuar curso</Link>
+          </Button>
+        ) : (
+          <form action={enrollCourse}>
+            <input type="hidden" name="slug" value={slug} />
+            <Button type="submit" variant="primary" size="lg" className="w-full">
+              Inscribirme
+            </Button>
+          </form>
+        )}
+      </div>
 
       <p className="mt-3 text-center text-xs text-ink-muted">
-        Inscripción sin costo durante el lanzamiento.
+        {enrolled
+          ? 'Ya estás inscrito. Retoma donde lo dejaste.'
+          : isAdmin
+            ? 'Los administradores no se inscriben.'
+            : 'Inscripción sin costo durante el lanzamiento.'}
+      </p>
+    </div>
+  )
+}
+
+function AdminNotice({ slug }: { slug: string }) {
+  return (
+    <div className="rounded-md border border-amber/30 bg-amber-pale p-3 text-xs text-ink-main">
+      <p className="font-medium">Estás en modo administrador.</p>
+      <p className="mt-1">
+        Los roles son excluyentes: un admin no se inscribe. Para editar el curso, ve al{' '}
+        <Link
+          href={`/admin/cursos/${slug}`}
+          className="font-medium text-teal hover:text-teal-light"
+        >
+          panel admin
+        </Link>
+        .
       </p>
     </div>
   )
