@@ -3,11 +3,9 @@
 import { useCallback, useMemo, useState } from 'react'
 
 import { CourseTopbar } from '@/components/course/CourseTopbar'
-import { EvalModal } from '@/components/course/EvalModal'
 import { LessonSidebar } from '@/components/course/LessonSidebar'
 import { LessonViewer } from '@/components/course/LessonViewer'
 import {
-  allModulesCompleted,
   getNextAccessibleLessonId,
   isLessonAccessible,
   progressPct,
@@ -35,10 +33,8 @@ export function CoursePlayer({ course, modules, initialProgress, hasEvaluation }
   const [progress, setProgress] = useState<ProgressMap>(initialProgress)
   const firstLessonId = modules[0]?.lessons[0]?.id ?? null
   const [currentLessonId, setCurrentLessonId] = useState<string | null>(firstLessonId)
-  const [showEval, setShowEval] = useState(false)
 
   const pct = progressPct(modules, progress)
-  const completedAll = allModulesCompleted(modules, progress)
   const currentLesson = useMemo(
     () => findLesson(modules, currentLessonId),
     [modules, currentLessonId],
@@ -82,13 +78,10 @@ export function CoursePlayer({ course, modules, initialProgress, hasEvaluation }
     <div className="flex min-h-screen flex-col bg-mist">
       <CourseTopbar
         title={course.title}
+        slug={course.slug}
         pct={pct}
-        completedAll={completedAll}
         hasEvaluation={hasEvaluation}
-        onStartEvaluation={() => setShowEval(true)}
       />
-
-      {showEval && <EvalModal slug={course.slug} onClose={() => setShowEval(false)} />}
 
       <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-4 py-6 lg:flex-row">
         <div className="min-w-0 space-y-4 lg:flex-1">

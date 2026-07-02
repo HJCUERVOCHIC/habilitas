@@ -2,231 +2,98 @@
 
 import { randomUUID } from 'node:crypto'
 
-import { allModulesCompleted } from '@/lib/course-progress'
 import { sendCertificateEmail } from '@/lib/email'
+import {
+  QUESTIONS_PER_ATTEMPT,
+  TIMER_GRACE_SEC,
+  TIMER_SEC,
+  computeAttemptWindow,
+  drawRandomIds,
+  elapsedSec,
+  gradeAttempt,
+  isAttemptExpired,
+} from '@/lib/evaluation'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
-import type { ModuleWithLessons, ProgressMap } from '@/types/course'
-import type { EvalIntro, EvalResult, EvalReviewItem, EvalStart } from '@/types/eval'
 import type { Json } from '@/types/database'
+import type {
+  EvalPageState,
+  EvalQuestion,
+  EvalReviewItem,
+  EvalStart,
+  EvalSubmit,
+} from '@/types/eval'
 
-/** N preguntas por intento (D4, default 10, configurable). */
-const QUESTIONS_PER_ATTEMPT = 10
+/**
+ * Server actions del bloque E3 (SPEC-EVALUACION).
+ *
+ * Reglas críticas:
+ *  - **Las respuestas correctas nunca salen del servidor durante el intento.**
+ *    Las preguntas viajan al cliente sin `correct_option`; la calificación
+ *    ocurre server-side comparando contra el banco leído via service-role.
+ *  - Timer (20 min) y bloqueo (24 h) son constantes fijas del spec, no
+ *    columnas por curso; ver `src/lib/evaluation.ts`.
+ *  - RLS: los propios `eval_attempts` se leen/escriben con el cookies client
+ *    (política `attempts_own`); las preguntas/opciones se leen con el admin
+ *    client porque no hay política de lectura para estudiantes (defensa en
+ *    profundidad — así ni siquiera un cliente autenticado como estudiante
+ *    puede pedir `correct_option`).
+ */
 
-type SupabaseServer = ReturnType<typeof createClient>
+type SupabaseAdmin = ReturnType<typeof createAdminClient>
+type QuestionRow = {
+  id: string
+  text: string
+  context: string | null
+  options: Json
+  correct_option: number
+  feedback_correct: string | null
+  feedback_wrong: string | null
+  order_index: number
+}
 
 function toOptions(value: Json): string[] {
   return Array.isArray(value) ? value.map((v) => String(v)) : []
 }
 
-function toResponses(value: Json | null): Record<string, number> {
+function toAnswers(value: Json | null): Record<string, number> {
   const out: Record<string, number> = {}
   if (value && typeof value === 'object' && !Array.isArray(value)) {
     for (const [key, val] of Object.entries(value)) {
-      if (typeof val === 'number') out[key] = val
+      if (typeof val === 'number' && Number.isInteger(val) && val >= 0) out[key] = val
     }
   }
   return out
 }
 
-async function loadModulesProgress(
-  supabase: SupabaseServer,
-  courseId: string,
-  userId: string,
-): Promise<{ modules: ModuleWithLessons[]; progress: ProgressMap }> {
-  const { data: modules } = await supabase
-    .from('modules')
-    .select('id, title, order_index')
-    .eq('course_id', courseId)
-    .order('order_index')
-  const moduleIds = (modules ?? []).map((m) => m.id)
-  const { data: lessons } = moduleIds.length
-    ? await supabase
-        .from('lessons')
-        .select('id, title, order_index, content_type, duration_min, module_id')
-        .in('module_id', moduleIds)
-    : { data: [] }
-  const { data: progressRows } = await supabase
-    .from('lesson_progress')
-    .select('lesson_id, completed, last_position')
-    .eq('user_id', userId)
-
-  const modulesWith: ModuleWithLessons[] = (modules ?? []).map((m) => ({
-    id: m.id,
-    title: m.title,
-    order_index: m.order_index,
-    lessons: (lessons ?? [])
-      .filter((l) => l.module_id === m.id)
-      .map(({ id, title, order_index, content_type, duration_min }) => ({
-        id,
-        title,
-        order_index,
-        content_type,
-        duration_min,
-      })),
-  }))
-  const progress: ProgressMap = {}
-  for (const row of progressRows ?? []) {
-    progress[row.lesson_id] = {
-      completed: row.completed ?? false,
-      last_position: row.last_position ?? 0,
-    }
+function sanitizeAnswers(
+  responses: Record<string, unknown>,
+  allowedIds: readonly string[],
+): Record<string, number> {
+  const allowed = new Set(allowedIds)
+  const out: Record<string, number> = {}
+  for (const [key, val] of Object.entries(responses)) {
+    if (!allowed.has(key)) continue
+    if (typeof val !== 'number' || !Number.isInteger(val) || val < 0) continue
+    out[key] = val
   }
-  return { modules: modulesWith, progress }
+  return out
 }
 
-type Gate =
-  | { ok: false; reason: EvalIntro['reason'] }
-  | {
-      ok: true
-      userId: string
-      supabase: SupabaseServer
-      course: { id: string; pass_score: number; max_attempts: number; cert_validity_days: number }
-      evaluationId: string
-      durationMin: number
-      attemptsUsed: number
-      hasPassed: boolean
-      bankSize: number
-    }
-
-/** Gating común: auth, inscripción, módulos completos, intentos disponibles. */
-async function gate(slug: string): Promise<Gate> {
-  const supabase = createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  if (!user) return { ok: false, reason: 'auth' }
-
-  const { data: course } = await supabase
-    .from('courses')
-    .select('id, pass_score, max_attempts, cert_validity_days')
-    .eq('slug', slug)
-    .maybeSingle()
-  if (!course) return { ok: false, reason: 'enrollment' }
-
-  const { data: enrollment } = await supabase
-    .from('enrollments')
-    .select('id')
-    .eq('user_id', user.id)
-    .eq('course_id', course.id)
-    .maybeSingle()
-  if (!enrollment) return { ok: false, reason: 'enrollment' }
-
-  const { modules, progress } = await loadModulesProgress(supabase, course.id, user.id)
-  if (!allModulesCompleted(modules, progress)) return { ok: false, reason: 'modules' }
-
-  const { data: evaluation } = await supabase
-    .from('evaluations')
-    .select('id, duration_min')
-    .eq('course_id', course.id)
-    .maybeSingle()
-  if (!evaluation) return { ok: false, reason: 'no-bank' }
-
-  const { count: bankSize } = await supabase
+async function loadQuestionsForClient(
+  admin: SupabaseAdmin,
+  ids: readonly string[],
+): Promise<EvalQuestion[]> {
+  if (ids.length === 0) return []
+  // Nota crítica: NO se selecciona `correct_option`. La proyección explícita
+  // evita filtraciones si en el futuro alguien añade `select('*')`.
+  const { data } = await admin
     .from('questions')
-    .select('*', { count: 'exact', head: true })
-    .eq('evaluation_id', evaluation.id)
-
-  const { data: attempts } = await supabase
-    .from('eval_attempts')
-    .select('passed')
-    .eq('user_id', user.id)
-    .eq('evaluation_id', evaluation.id)
-
-  const attemptsUsed = attempts?.length ?? 0
-  const hasPassed = (attempts ?? []).some((a) => a.passed === true)
-
-  return {
-    ok: true,
-    userId: user.id,
-    supabase,
-    course,
-    evaluationId: evaluation.id,
-    durationMin: evaluation.duration_min,
-    attemptsUsed,
-    hasPassed,
-    bankSize: bankSize ?? 0,
-  }
-}
-
-export async function getEvaluationState(slug: string): Promise<EvalIntro> {
-  const g = await gate(slug)
-  if (!g.ok) {
-    return {
-      durationMin: 0,
-      questionCount: 0,
-      passScore: 0,
-      maxAttempts: 0,
-      attemptsUsed: 0,
-      hasPassed: false,
-      bankSize: 0,
-      canStart: false,
-      reason: g.reason,
-    }
-  }
-
-  const questionCount = Math.min(QUESTIONS_PER_ATTEMPT, g.bankSize)
-  let reason: EvalIntro['reason'] = 'ok'
-  if (g.hasPassed) reason = 'passed'
-  else if (g.attemptsUsed >= g.course.max_attempts) reason = 'attempts'
-  else if (g.bankSize === 0) reason = 'no-bank'
-
-  return {
-    durationMin: g.durationMin,
-    questionCount,
-    passScore: g.course.pass_score,
-    maxAttempts: g.course.max_attempts,
-    attemptsUsed: g.attemptsUsed,
-    hasPassed: g.hasPassed,
-    bankSize: g.bankSize,
-    canStart: reason === 'ok',
-    reason,
-  }
-}
-
-export async function startAttempt(slug: string): Promise<EvalStart> {
-  const g = await gate(slug)
-  if (!g.ok) return { ok: false, reason: g.reason }
-  if (g.hasPassed) return { ok: false, reason: 'passed' }
-  if (g.attemptsUsed >= g.course.max_attempts) return { ok: false, reason: 'attempts' }
-  if (g.bankSize === 0) return { ok: false, reason: 'no-bank' }
-
-  // Sorteo de N preguntas al azar (D4).
-  const { data: bank } = await g.supabase
-    .from('questions')
-    .select('id')
-    .eq('evaluation_id', g.evaluationId)
-  const ids = (bank ?? []).map((q) => q.id)
-  for (let i = ids.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1))
-    const a = ids[i]!
-    const b = ids[j]!
-    ids[i] = b
-    ids[j] = a
-  }
-  const drawn = ids.slice(0, Math.min(QUESTIONS_PER_ATTEMPT, ids.length))
-
-  const { data: attempt, error: insertError } = await g.supabase
-    .from('eval_attempts')
-    .insert({
-      user_id: g.userId,
-      evaluation_id: g.evaluationId,
-      attempt_number: g.attemptsUsed + 1,
-      question_ids: drawn,
-    })
-    .select('id, started_at')
-    .single()
-  if (insertError || !attempt) return { ok: false, reason: 'no-bank' }
-
-  // Preguntas SIN correct_option (D1: no se revela durante el intento).
-  const { data: questions } = await g.supabase
-    .from('questions')
-    .select('id, text, context, options')
-    .in('id', drawn)
-
-  const byId = new Map((questions ?? []).map((q) => [q.id, q]))
-  const ordered = drawn
-    .map((id, index) => {
+    .select('id, text, context, options, order_index')
+    .in('id', ids)
+  const byId = new Map((data ?? []).map((q) => [q.id, q]))
+  return ids
+    .map((id, index): EvalQuestion | null => {
       const q = byId.get(id)
       if (!q) return null
       return {
@@ -237,24 +104,351 @@ export async function startAttempt(slug: string): Promise<EvalStart> {
         options: toOptions(q.options),
       }
     })
-    .filter((q): q is NonNullable<typeof q> => q !== null)
+    .filter((q): q is EvalQuestion => q !== null)
+}
+
+async function loadCorrectByAndBank(
+  admin: SupabaseAdmin,
+  ids: readonly string[],
+): Promise<{ correctById: Record<string, number>; rows: Map<string, QuestionRow> }> {
+  if (ids.length === 0) return { correctById: {}, rows: new Map() }
+  const { data } = await admin
+    .from('questions')
+    .select('id, text, context, options, correct_option, feedback_correct, feedback_wrong, order_index')
+    .in('id', ids)
+  const rows = new Map<string, QuestionRow>()
+  const correctById: Record<string, number> = {}
+  for (const q of data ?? []) {
+    rows.set(q.id, q)
+    correctById[q.id] = q.correct_option
+  }
+  return { correctById, rows }
+}
+
+function buildReview(
+  ids: readonly string[],
+  rows: Map<string, QuestionRow>,
+  answers: Record<string, number>,
+): EvalReviewItem[] {
+  return ids
+    .map((qid): EvalReviewItem | null => {
+      const q = rows.get(qid)
+      if (!q) return null
+      const selected = answers[qid] ?? null
+      const correct = selected === q.correct_option
+      return {
+        question: q.text,
+        options: toOptions(q.options),
+        correctOption: q.correct_option,
+        selectedOption: selected,
+        correct,
+        explanation: correct ? q.feedback_correct : q.feedback_wrong,
+      }
+    })
+    .filter((r): r is EvalReviewItem => r !== null)
+}
+
+type BaseContext = {
+  supabase: ReturnType<typeof createClient>
+  admin: SupabaseAdmin
+  userId: string
+  course: {
+    id: string
+    title: string
+    slug: string
+    pass_score: number
+    max_attempts: number
+    cert_validity_days: number
+    instructor_id: string | null
+  }
+  evaluationId: string | null
+  bankIds: string[]
+}
+
+async function loadBaseContext(slug: string): Promise<
+  | { ok: false; reason: 'auth' | 'enrollment' | 'not-found' }
+  | { ok: true; ctx: BaseContext }
+> {
+  const supabase = createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) return { ok: false, reason: 'auth' }
+
+  const admin = createAdminClient()
+
+  const { data: course } = await admin
+    .from('courses')
+    .select('id, slug, title, pass_score, max_attempts, cert_validity_days, instructor_id')
+    .eq('slug', slug)
+    .maybeSingle()
+  if (!course) return { ok: false, reason: 'not-found' }
+
+  // Inscripción con el cookies client (política enrollments_own): defensa en
+  // profundidad ante una respuesta incorrecta del admin client.
+  const { data: enrollment } = await supabase
+    .from('enrollments')
+    .select('id')
+    .eq('user_id', user.id)
+    .eq('course_id', course.id)
+    .maybeSingle()
+  if (!enrollment) return { ok: false, reason: 'enrollment' }
+
+  const { data: evaluation } = await admin
+    .from('evaluations')
+    .select('id')
+    .eq('course_id', course.id)
+    .maybeSingle()
+
+  const { data: bankRows } = evaluation
+    ? await admin.from('questions').select('id').eq('evaluation_id', evaluation.id)
+    : { data: [] }
+  const bankIds = (bankRows ?? []).map((r) => r.id)
+
+  return {
+    ok: true,
+    ctx: {
+      supabase,
+      admin,
+      userId: user.id,
+      course,
+      evaluationId: evaluation?.id ?? null,
+      bankIds,
+    },
+  }
+}
+
+/**
+ * Carga el estado completo para la pantalla `/curso/[slug]/evaluacion` (SSR).
+ * Devuelve un variant discriminado que la página renderiza directamente.
+ * No mutan datos: si un intento abierto expiró, se marca como
+ * `expired-pending` para que el cliente auto-envíe con lo que tenga.
+ */
+export async function getEvaluationPageState(slug: string): Promise<EvalPageState> {
+  const base = await loadBaseContext(slug)
+  if (!base.ok) {
+    if (base.reason === 'auth') return { status: 'auth' }
+    return { status: 'enrollment', slug }
+  }
+  const { ctx } = base
+  const { course, bankIds, evaluationId } = ctx
+
+  if (!evaluationId || bankIds.length < QUESTIONS_PER_ATTEMPT) {
+    return {
+      status: 'no-bank',
+      courseTitle: course.title,
+      slug: course.slug,
+      bankSize: bankIds.length,
+    }
+  }
+
+  const { data: attempts } = await ctx.supabase
+    .from('eval_attempts')
+    .select('id, started_at, submitted_at, score, passed, question_ids, answers, attempt_number')
+    .eq('user_id', ctx.userId)
+    .eq('evaluation_id', evaluationId)
+    .order('started_at', { ascending: false })
+
+  const rows = attempts ?? []
+  const openAttempt = rows.find((r) => r.submitted_at === null)
+  const closedAttempts = rows.filter((r) => r.submitted_at !== null)
+  const passedRow = closedAttempts.find((r) => r.passed === true)
+
+  if (passedRow) {
+    // Aprobado — mostrar revisión completa (D1). Se lee el banco con admin
+    // solo aquí, tras confirmar `passed=true`.
+    const questionIds = passedRow.question_ids ?? []
+    const { rows: qrows } = await loadCorrectByAndBank(ctx.admin, questionIds)
+    const answers = toAnswers(passedRow.answers)
+    const review = buildReview(questionIds, qrows, answers)
+    const correct = questionIds.reduce((n, qid) => {
+      const q = qrows.get(qid)
+      return q && answers[qid] === q.correct_option ? n + 1 : n
+    }, 0)
+    return {
+      status: 'passed',
+      courseTitle: course.title,
+      slug: course.slug,
+      score: passedRow.score ?? 0,
+      submittedAt: passedRow.submitted_at ?? '',
+      review,
+      passScore: course.pass_score,
+      correct,
+      total: questionIds.length,
+      timeSpentSec: 0,
+    }
+  }
+
+  if (openAttempt) {
+    if (isAttemptExpired(openAttempt.started_at)) {
+      return {
+        status: 'expired-pending',
+        courseTitle: course.title,
+        slug: course.slug,
+        attemptId: openAttempt.id,
+      }
+    }
+    const questions = await loadQuestionsForClient(ctx.admin, openAttempt.question_ids ?? [])
+    return {
+      status: 'active',
+      courseTitle: course.title,
+      slug: course.slug,
+      attemptId: openAttempt.id,
+      startedAt: openAttempt.started_at,
+      questions,
+      passScore: course.pass_score,
+      maxAttempts: course.max_attempts,
+      attemptNumber: openAttempt.attempt_number ?? closedAttempts.length + 1,
+      savedAnswers: toAnswers(openAttempt.answers),
+    }
+  }
+
+  const window = computeAttemptWindow(
+    closedAttempts.map((a) => ({ submitted_at: a.submitted_at!, passed: a.passed ?? false })),
+    course.max_attempts,
+  )
+
+  if (window.blocked) {
+    const latest = closedAttempts.reduce<typeof closedAttempts[number] | null>((acc, a) => {
+      if (!acc) return a
+      return new Date(a.submitted_at!).getTime() > new Date(acc.submitted_at!).getTime() ? a : acc
+    }, null)
+    return {
+      status: 'blocked',
+      courseTitle: course.title,
+      slug: course.slug,
+      unlockAt: window.unlockAt,
+      lastScore: latest?.score ?? null,
+      maxAttempts: course.max_attempts,
+    }
+  }
+
+  const lastFailed = closedAttempts[0] ?? null
+  return {
+    status: 'ready',
+    courseTitle: course.title,
+    slug: course.slug,
+    passScore: course.pass_score,
+    maxAttempts: course.max_attempts,
+    remainingAttempts: window.remaining,
+    questionCount: QUESTIONS_PER_ATTEMPT,
+    lastFailedScore: lastFailed?.score ?? null,
+  }
+}
+
+/**
+ * Crea un nuevo intento: sortea 10 preguntas y devuelve las opciones **sin**
+ * la marca de correcta. Rechaza si ya aprobó, si está bloqueado por 24 h,
+ * si hay un intento en curso, o si el banco no llega a 10.
+ */
+export async function startAttempt(slug: string): Promise<EvalStart> {
+  const base = await loadBaseContext(slug)
+  if (!base.ok) {
+    if (base.reason === 'auth') return { ok: false, reason: 'auth' }
+    if (base.reason === 'enrollment') return { ok: false, reason: 'enrollment' }
+    return { ok: false, reason: 'no-bank' }
+  }
+  const { ctx } = base
+  const { evaluationId, bankIds, course } = ctx
+
+  if (!evaluationId || bankIds.length < QUESTIONS_PER_ATTEMPT) {
+    return { ok: false, reason: 'no-bank' }
+  }
+
+  const { data: attempts } = await ctx.supabase
+    .from('eval_attempts')
+    .select('id, started_at, submitted_at, score, passed, attempt_number')
+    .eq('user_id', ctx.userId)
+    .eq('evaluation_id', evaluationId)
+    .order('started_at', { ascending: false })
+
+  const rows = attempts ?? []
+  if (rows.some((r) => r.submitted_at === null && !isAttemptExpired(r.started_at))) {
+    return { ok: false, reason: 'in-progress' }
+  }
+  if (rows.some((r) => r.passed === true)) return { ok: false, reason: 'passed' }
+
+  const closed = rows.filter((r) => r.submitted_at !== null)
+  const window = computeAttemptWindow(
+    closed.map((a) => ({ submitted_at: a.submitted_at!, passed: a.passed ?? false })),
+    course.max_attempts,
+  )
+  if (window.blocked) return { ok: false, reason: 'blocked' }
+
+  const drawn = drawRandomIds(bankIds, QUESTIONS_PER_ATTEMPT)
+
+  // Número de intento monotónico dentro de la evaluación (para el histórico).
+  const nextNumber = (rows[0]?.attempt_number ?? 0) + 1
+
+  const { data: attempt, error: insertError } = await ctx.supabase
+    .from('eval_attempts')
+    .insert({
+      user_id: ctx.userId,
+      evaluation_id: evaluationId,
+      attempt_number: nextNumber,
+      question_ids: drawn,
+    })
+    .select('id, started_at')
+    .single()
+  if (insertError || !attempt) return { ok: false, reason: 'no-bank' }
+
+  const questions = await loadQuestionsForClient(ctx.admin, drawn)
 
   return {
     ok: true,
     attemptId: attempt.id,
     startedAt: attempt.started_at,
-    durationMin: g.durationMin,
-    attemptNumber: g.attemptsUsed + 1,
-    maxAttempts: g.course.max_attempts,
-    passScore: g.course.pass_score,
-    questions: ordered,
+    questions,
+    passScore: course.pass_score,
+    maxAttempts: course.max_attempts,
+    attemptNumber: nextNumber,
   }
 }
 
+/**
+ * Auto-save de respuestas mid-intento (spec §1.3 "reanuda"). Solo sobrescribe
+ * `answers`; no toca `submitted_at` ni score. Idempotente y silencioso ante
+ * errores para no bloquear la UX.
+ */
+export async function saveAttemptAnswers(
+  attemptId: string,
+  responses: Record<string, number>,
+): Promise<{ ok: boolean }> {
+  const supabase = createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) return { ok: false }
+
+  const { data: attempt } = await supabase
+    .from('eval_attempts')
+    .select('id, user_id, submitted_at, question_ids, started_at')
+    .eq('id', attemptId)
+    .maybeSingle()
+  if (!attempt || attempt.user_id !== user.id) return { ok: false }
+  if (attempt.submitted_at !== null) return { ok: false }
+  if (isAttemptExpired(attempt.started_at)) return { ok: false }
+
+  const clean = sanitizeAnswers(responses, attempt.question_ids ?? [])
+  const { error } = await supabase
+    .from('eval_attempts')
+    .update({ answers: clean })
+    .eq('id', attemptId)
+  return { ok: !error }
+}
+
+/**
+ * Cierra y califica el intento. Fuente de verdad del timer: `started_at`.
+ * - Si el envío llega dentro de la ventana → cuentan las respuestas.
+ * - Si llega fuera de la ventana (spec §1.4: "lo enviado fuera de tiempo no
+ *   cuenta") → se ignoran las respuestas del payload y se califican solo las
+ *   que ya habían quedado auto-guardadas por `saveAttemptAnswers`. Esto evita
+ *   que un cliente hostil suplante el timer subiendo respuestas post-vencido.
+ */
 export async function submitAttempt(
   attemptId: string,
   responses: Record<string, number>,
-): Promise<EvalResult> {
+): Promise<EvalSubmit> {
   const supabase = createClient()
   const {
     data: { user },
@@ -263,103 +457,108 @@ export async function submitAttempt(
 
   const { data: attempt } = await supabase
     .from('eval_attempts')
-    .select('id, evaluation_id, question_ids, started_at, submitted_at, answers, score, passed, time_spent_sec')
+    .select(
+      'id, user_id, evaluation_id, question_ids, started_at, submitted_at, answers, score, passed, time_spent_sec, attempt_number',
+    )
     .eq('id', attemptId)
     .maybeSingle()
-  if (!attempt) return { ok: false, reason: 'not-found' }
+  if (!attempt || attempt.user_id !== user.id) return { ok: false, reason: 'not-found' }
+  if (attempt.submitted_at !== null) return { ok: false, reason: 'already-submitted' }
 
-  const alreadySubmitted = attempt.submitted_at !== null
-  const answers = alreadySubmitted ? toResponses(attempt.answers) : responses
+  const timedOut = isAttemptExpired(attempt.started_at)
+  const questionIds = attempt.question_ids ?? []
+  const persistedAnswers = toAnswers(attempt.answers)
+  const cleanIncoming = sanitizeAnswers(responses, questionIds)
+  // Fuera de tiempo → solo cuenta lo previamente auto-guardado.
+  const finalAnswers = timedOut ? persistedAnswers : { ...persistedAnswers, ...cleanIncoming }
 
-  // pass_score del curso.
-  const { data: evaluation } = await supabase
-    .from('evaluations')
-    .select('course_id')
-    .eq('id', attempt.evaluation_id)
-    .maybeSingle()
+  const admin = createAdminClient()
+  const { correctById, rows: qrows } = await loadCorrectByAndBank(admin, questionIds)
+  const { correctCount, score } = gradeAttempt(questionIds, correctById, finalAnswers)
+
+  const { data: evaluation } = attempt.evaluation_id
+    ? await admin
+        .from('evaluations')
+        .select('course_id')
+        .eq('id', attempt.evaluation_id)
+        .maybeSingle()
+    : { data: null }
   const { data: course } = evaluation
-    ? await supabase.from('courses').select('pass_score').eq('id', evaluation.course_id).maybeSingle()
+    ? await admin
+        .from('courses')
+        .select('pass_score, max_attempts')
+        .eq('id', evaluation.course_id)
+        .maybeSingle()
     : { data: null }
   const passScore = course?.pass_score ?? 70
-
-  // Preguntas del sorteo CON la opción correcta (puntuación en servidor).
-  const { data: questions } = attempt.question_ids.length
-    ? await supabase
-        .from('questions')
-        .select('id, text, options, correct_option, feedback_correct, feedback_wrong')
-        .in('id', attempt.question_ids)
-    : { data: [] }
-  const byId = new Map((questions ?? []).map((q) => [q.id, q]))
-
-  const total = attempt.question_ids.length
-  let correctCount = 0
-  for (const qid of attempt.question_ids) {
-    const q = byId.get(qid)
-    if (q && answers[qid] === q.correct_option) correctCount++
-  }
-  const score = total > 0 ? Math.round((correctCount / total) * 100) : 0
+  const maxAttempts = course?.max_attempts ?? 3
   const passed = score >= passScore
 
-  // Tiempo validado en servidor desde started_at (D7).
-  const elapsed = Math.max(
-    0,
-    Math.floor((Date.now() - new Date(attempt.started_at).getTime()) / 1000),
-  )
-  const timeSpentSec = alreadySubmitted ? attempt.time_spent_sec ?? elapsed : elapsed
+  const elapsed = elapsedSec(attempt.started_at)
+  // Ante un envío tardío, el tiempo registrado queda topado en TIMER_SEC
+  // (el intento "válido" duró como máximo la ventana). El campo es puramente
+  // informativo; la validez del envío se refleja en `timedOut`.
+  const timeSpentSec = Math.min(elapsed, TIMER_SEC + TIMER_GRACE_SEC)
 
-  if (!alreadySubmitted) {
-    await supabase
-      .from('eval_attempts')
-      .update({
-        score,
-        passed,
-        answers,
-        time_spent_sec: timeSpentSec,
-        submitted_at: new Date().toISOString(),
-      })
-      .eq('id', attemptId)
-  }
+  const { error: updateError } = await supabase
+    .from('eval_attempts')
+    .update({
+      score,
+      passed,
+      answers: finalAnswers,
+      time_spent_sec: timeSpentSec,
+      submitted_at: new Date().toISOString(),
+    })
+    .eq('id', attemptId)
+  if (updateError) return { ok: false, reason: 'not-found' }
 
   const base = {
     ok: true as const,
-    attemptId,
     score,
     passed,
-    total,
     correct: correctCount,
+    total: questionIds.length,
     timeSpentSec,
+    timedOut,
   }
 
   if (passed) {
-    // Revisión completa con explicaciones (D1).
-    const review: EvalReviewItem[] = attempt.question_ids
-      .map((qid) => {
-        const q = byId.get(qid)
-        if (!q) return null
-        const selected = answers[qid] ?? null
-        const correct = selected === q.correct_option
-        return {
-          question: q.text,
-          options: toOptions(q.options),
-          correctOption: q.correct_option,
-          selectedOption: selected,
-          correct,
-          explanation: correct ? q.feedback_correct : q.feedback_wrong,
-        }
-      })
-      .filter((r): r is EvalReviewItem => r !== null)
-    return { ...base, review }
+    return { ...base, review: buildReview(questionIds, qrows, finalAnswers) }
   }
 
-  // Reprobado: solo temas a reforzar, sin respuesta literal (D1).
   const topics: string[] = []
-  for (const qid of attempt.question_ids) {
-    const q = byId.get(qid)
-    if (q && answers[qid] !== q.correct_option) topics.push(q.text)
+  for (const qid of questionIds) {
+    const q = qrows.get(qid)
+    if (q && finalAnswers[qid] !== q.correct_option) topics.push(q.text)
   }
-  return { ...base, topics }
+
+  // Post-envío: recomputar ventana incluyendo este intento para saber si
+  // quedó bloqueado o aún puede reintentar.
+  const { data: allAttempts } = await supabase
+    .from('eval_attempts')
+    .select('submitted_at, passed')
+    .eq('user_id', user.id)
+    .eq('evaluation_id', attempt.evaluation_id!)
+    .not('submitted_at', 'is', null)
+  const closed = (allAttempts ?? []).map((a) => ({
+    submitted_at: a.submitted_at as string,
+    passed: a.passed ?? false,
+  }))
+  const window = computeAttemptWindow(closed, maxAttempts)
+  const extras =
+    window.blocked
+      ? { unlockAt: window.unlockAt, remainingAttempts: 0 }
+      : { remainingAttempts: window.remaining }
+
+  return { ...base, topics, ...extras }
 }
 
+/**
+ * Emite la constancia asociada al intento aprobado (E4). Se mantiene aquí por
+ * cercanía con el intento; el bloque E3 no la invoca desde su UI, pero el
+ * bloque E4 la reutilizará. Idempotente: un intento aprobado emite un solo
+ * certificado.
+ */
 export async function emitCertificate(
   attemptId: string,
 ): Promise<{ ok: true; certId: string } | { ok: false; reason: string }> {
@@ -379,7 +578,6 @@ export async function emitCertificate(
 
   const admin = createAdminClient()
 
-  // Idempotencia: un intento aprobado emite un solo certificado (§6.4).
   const { data: existing } = await admin
     .from('certificates')
     .select('cert_id')
@@ -419,8 +617,6 @@ export async function emitCertificate(
   const issuedAt = new Date()
   const expiresAt = new Date(issuedAt.getTime() + course.cert_validity_days * 86_400_000)
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? ''
-  // Token opaco, no enumerable (SPEC-CUMPLIMIENTO-P1 §3 R9). El cert_id
-  // legible se conserva para soporte; las URLs públicas usan verification_id.
   const verificationId = randomUUID()
   const verifyUrl = `${siteUrl}/verificar/${verificationId}`
 
@@ -442,7 +638,6 @@ export async function emitCertificate(
   })
   if (insertError) return { ok: false, reason: 'insert' }
 
-  // Email (con fallback si Resend no está configurado).
   await sendCertificateEmail({
     to: user.email ?? '',
     professionalName: professional?.full_name ?? 'Profesional',

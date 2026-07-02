@@ -1,4 +1,11 @@
-/** Pregunta enviada al cliente: SIN la opción correcta (D1). */
+/**
+ * Contratos de datos de la evaluación (SPEC-EVALUACION).
+ * Regla crítica: `correct_option` **no** cruza al cliente durante el intento.
+ * El servidor lee las respuestas correctas via service-role y las revela solo
+ * en `review` (solo si el estudiante aprobó, D1 / spec §1.5).
+ */
+
+/** Pregunta enviada al cliente durante el intento: SIN la opción correcta. */
 export type EvalQuestion = {
   id: string
   order: number
@@ -7,33 +14,7 @@ export type EvalQuestion = {
   options: string[]
 }
 
-/** Estado de la evaluación para la pantalla de intro (RF-5.1 / RF-5.9). */
-export type EvalIntro = {
-  durationMin: number
-  questionCount: number
-  passScore: number
-  maxAttempts: number
-  attemptsUsed: number
-  hasPassed: boolean
-  bankSize: number
-  canStart: boolean
-  reason: 'ok' | 'auth' | 'enrollment' | 'modules' | 'attempts' | 'passed' | 'no-bank'
-}
-
-export type EvalStart =
-  | {
-      ok: true
-      attemptId: string
-      startedAt: string
-      durationMin: number
-      attemptNumber: number
-      maxAttempts: number
-      passScore: number
-      questions: EvalQuestion[]
-    }
-  | { ok: false; reason: EvalIntro['reason'] }
-
-/** Revisión por pregunta (solo si aprobó — D1). */
+/** Revisión por pregunta (solo si aprobó — D1 / spec §1.5). */
 export type EvalReviewItem = {
   question: string
   options: string[]
@@ -43,18 +24,108 @@ export type EvalReviewItem = {
   explanation: string | null
 }
 
-export type EvalResult =
+/** Resumen de un intento cerrado (para el registro de la constancia en E4). */
+export type EvalAttemptSummary = {
+  score: number
+  passed: boolean
+  submittedAt: string
+  correctCount: number
+  total: number
+  timeSpentSec: number
+}
+
+/**
+ * Estado que renderiza la pantalla /curso/[slug]/evaluacion (SSR).
+ * Un solo variant discriminado por `status` — evita props booleanos rotos.
+ */
+export type EvalPageState =
+  | { status: 'auth' }
+  | { status: 'enrollment'; slug: string }
+  | { status: 'no-bank'; courseTitle: string; slug: string; bankSize: number }
+  | {
+      status: 'passed'
+      courseTitle: string
+      slug: string
+      score: number
+      submittedAt: string
+      review: EvalReviewItem[]
+      passScore: number
+      correct: number
+      total: number
+      timeSpentSec: number
+    }
+  | {
+      status: 'active'
+      courseTitle: string
+      slug: string
+      attemptId: string
+      startedAt: string
+      questions: EvalQuestion[]
+      passScore: number
+      maxAttempts: number
+      attemptNumber: number
+      /** Respuestas previamente guardadas por auto-save (spec §1.3: reanudar). */
+      savedAnswers: Record<string, number>
+    }
+  | {
+      status: 'expired-pending'
+      courseTitle: string
+      slug: string
+      attemptId: string
+    }
+  | {
+      status: 'blocked'
+      courseTitle: string
+      slug: string
+      unlockAt: string
+      lastScore: number | null
+      maxAttempts: number
+    }
+  | {
+      status: 'ready'
+      courseTitle: string
+      slug: string
+      passScore: number
+      maxAttempts: number
+      remainingAttempts: number
+      questionCount: number
+      lastFailedScore: number | null
+    }
+
+/** Respuesta a startAttempt: éxito con set sorteado, o motivo de rechazo. */
+export type EvalStart =
   | {
       ok: true
       attemptId: string
+      startedAt: string
+      questions: EvalQuestion[]
+      passScore: number
+      maxAttempts: number
+      attemptNumber: number
+    }
+  | {
+      ok: false
+      reason: 'auth' | 'enrollment' | 'no-bank' | 'passed' | 'blocked' | 'in-progress'
+    }
+
+/** Respuesta a submitAttempt: intento cerrado, con revisión solo si aprobó. */
+export type EvalSubmit =
+  | {
+      ok: true
       score: number
       passed: boolean
-      total: number
       correct: number
+      total: number
       timeSpentSec: number
-      // Solo si aprobó:
+      /** Solo si aprobó — D1 / spec §1.5. */
       review?: EvalReviewItem[]
-      // Solo si reprobó (temas a reforzar, sin respuesta literal):
+      /** Solo si NO aprobó — temas a reforzar sin respuesta literal. */
       topics?: string[]
+      /** Solo si NO aprobó y aún queda cupo. */
+      remainingAttempts?: number
+      /** Solo si NO aprobó y se agotaron los intentos → bloqueo 24 h. */
+      unlockAt?: string
+      /** True si el envío llegó fuera de la ventana de 20 min. */
+      timedOut: boolean
     }
-  | { ok: false; reason: 'auth' | 'not-found' | 'mismatch' }
+  | { ok: false; reason: 'auth' | 'not-found' | 'already-submitted' }

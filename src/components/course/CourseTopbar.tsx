@@ -6,26 +6,19 @@ import { Button } from '@/components/ui/Button'
 
 interface CourseTopbarProps {
   title: string
+  slug: string
   pct: number
-  completedAll: boolean
   hasEvaluation: boolean
-  onStartEvaluation: () => void
 }
 
 /**
  * Topbar del curso (HABILITAS-ESPECIFICACION §5.4 RF-4.1). Fondo sólido charcoal
- * (nunca gradiente). La evaluación se habilita solo al completar todos los
- * módulos (RF-4.6).
+ * (nunca gradiente). La evaluación tiene **acceso directo** (SPEC-EVALUACION
+ * decisión 2): no está gated por el progreso de lecciones. El estado real
+ * (aprobado / bloqueado / intentos restantes) se resuelve en la propia página
+ * `/curso/[slug]/evaluacion`.
  */
-export function CourseTopbar({
-  title,
-  pct,
-  completedAll,
-  hasEvaluation,
-  onStartEvaluation,
-}: CourseTopbarProps) {
-  const evalEnabled = completedAll && hasEvaluation
-
+export function CourseTopbar({ title, slug, pct, hasEvaluation }: CourseTopbarProps) {
   return (
     <header className="bg-charcoal text-white">
       <div className="mx-auto flex max-w-6xl flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
@@ -50,19 +43,11 @@ export function CourseTopbar({
             </div>
           </div>
 
-          <Button
-            variant={evalEnabled ? 'primary' : 'dark'}
-            size="sm"
-            disabled={!evalEnabled}
-            onClick={onStartEvaluation}
-            title={
-              evalEnabled
-                ? 'Comenzar evaluación final'
-                : 'Completa los módulos para desbloquear'
-            }
-          >
-            {completedAll ? 'Comenzar evaluación' : 'Evaluación bloqueada'}
-          </Button>
+          {hasEvaluation && (
+            <Button variant="primary" size="sm" asChild>
+              <Link href={`/curso/${slug}/evaluacion`}>Ir a evaluación</Link>
+            </Button>
+          )}
         </div>
       </div>
     </header>
