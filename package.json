@@ -10,6 +10,7 @@
     "type-check": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:e2e": "vitest run --config vitest.e2e.config.ts",
     "db:apply": "node --env-file=.env.local scripts/apply-migration.mjs",
     "db:verify": "node --env-file=.env.local scripts/verify-db.mjs",
     "db:seed": "node --env-file=.env.local scripts/seed.mjs",
