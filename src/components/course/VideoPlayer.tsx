@@ -41,19 +41,22 @@ export function VideoPlayer({
     const video = ref.current
     if (!video || !video.duration) return
     const pos = video.currentTime
-    const ratio = pos / video.duration
+    const duration = video.duration
+    const ratio = pos / duration
 
     // Guardar posición cada ~10s (cronómetro de cliente, persistido en servidor).
     if (pos - lastSavedAt.current >= 10) {
       lastSavedAt.current = pos
       onPosition(lessonId, Math.floor(pos))
-      void saveVideoProgress(lessonId, pos, false)
+      void saveVideoProgress(lessonId, pos, duration, false)
     }
 
     if (!doneRef.current && ratio >= 0.9) {
       doneRef.current = true
       onComplete(lessonId, Math.floor(pos))
-      void saveVideoProgress(lessonId, pos, true)
+      // La validación de ≥90% se repite en el servidor con la duración
+      // reportada; ver isVideoCompletionValid.
+      void saveVideoProgress(lessonId, pos, duration, true)
     }
   }
 

@@ -1,6 +1,6 @@
 'use server'
 
-import { isLessonAccessible } from '@/lib/course-progress'
+import { isLessonAccessible, isVideoCompletionValid } from '@/lib/course-progress'
 import { getSignedLessonUrl } from '@/lib/r2'
 import { createClient } from '@/lib/supabase/server'
 import type { ModuleWithLessons, ProgressMap } from '@/types/course'
@@ -142,15 +142,24 @@ export async function markLessonComplete(lessonId: string): Promise<{ ok: boolea
   return { ok: !error }
 }
 
-/** Guarda la posición del video y, si llegó al ≥90%, lo marca completado (D3). */
+/**
+ * Guarda posición del video y (D3) lo marca completado solo si el cliente
+ * reporta ≥90% del video. La validación ocurre server-side vía
+ * `isVideoCompletionValid`; sin `durationSec` o con ratio < 0.9,
+ * `completed` NO se acepta (se persiste solo last_position).
+ * SPEC-REPRODUCTOR-PROGRESO §1.3 (validado en registro/servidor).
+ */
 export async function saveVideoProgress(
   lessonId: string,
   lastPosition: number,
+  durationSec: number | null,
   completed: boolean,
 ): Promise<{ ok: boolean }> {
   const ctx = await loadContext(lessonId)
   if ('error' in ctx) return { ok: false }
   if (!isLessonAccessible(ctx.modules, lessonId, ctx.progress)) return { ok: false }
+
+  const acceptCompleted = completed && isVideoCompletionValid(lastPosition, durationSec)
 
   const payload: {
     user_id: string
@@ -163,7 +172,7 @@ export async function saveVideoProgress(
     lesson_id: lessonId,
     last_position: Math.max(0, Math.floor(lastPosition)),
   }
-  if (completed) {
+  if (acceptCompleted) {
     payload.completed = true
     payload.completed_at = new Date().toISOString()
   }

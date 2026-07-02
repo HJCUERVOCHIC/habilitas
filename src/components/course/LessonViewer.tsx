@@ -115,7 +115,7 @@ function LessonBody({
     const messages: Record<string, string> = {
       auth: 'Tu sesión expiró. Vuelve a iniciar sesión.',
       enrollment: 'No estás inscrito en este curso.',
-      locked: 'Completa el módulo anterior para desbloquear esta lección.',
+      locked: 'Completa la lección anterior para desbloquear esta.',
       'not-found': 'No encontramos esta lección.',
     }
     return <Placeholder>{messages[content.reason] ?? 'Contenido no disponible.'}</Placeholder>

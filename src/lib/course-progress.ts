@@ -63,13 +63,58 @@ export function progressPct(modules: ModuleWithLessons[], progress: ProgressMap)
   return Math.round((countCompleted(modules, progress) / total) * 100)
 }
 
-/** ¿La lección pertenece a un módulo desbloqueado? (gating de acceso). */
+/**
+ * Desbloqueo progresivo **por lección** (SPEC-REPRODUCTOR-PROGRESO §1.2): la
+ * primera lección del curso siempre está abierta; cualquier otra queda
+ * desbloqueada solo cuando la anterior (en orden natural) está completada.
+ */
 export function isLessonAccessible(
   modules: ModuleWithLessons[],
   lessonId: string,
   progress: ProgressMap,
 ): boolean {
-  const index = modules.findIndex((m) => m.lessons.some((l) => l.id === lessonId))
-  if (index === -1) return false
-  return isModuleUnlocked(modules, index, progress)
+  const flat: string[] = []
+  for (const mod of modules) {
+    for (const lesson of mod.lessons) flat.push(lesson.id)
+  }
+  const idx = flat.indexOf(lessonId)
+  if (idx === -1) return false
+  if (idx === 0) return true
+  const prev = flat[idx - 1]
+  return prev != null && isLessonCompleted(progress, prev)
+}
+
+/**
+ * Siguiente lección accesible después de `currentLessonId` en el orden natural
+ * del curso, o null si no hay una siguiente accesible (fin del curso o la
+ * anterior no está completada). CTA "Siguiente lección" del reproductor.
+ */
+export function getNextAccessibleLessonId(
+  modules: ModuleWithLessons[],
+  currentLessonId: string,
+  progress: ProgressMap,
+): string | null {
+  const flat: string[] = []
+  for (const mod of modules) {
+    for (const lesson of mod.lessons) flat.push(lesson.id)
+  }
+  const idx = flat.indexOf(currentLessonId)
+  if (idx === -1 || idx === flat.length - 1) return null
+  const next = flat[idx + 1]
+  if (!next) return null
+  return isLessonAccessible(modules, next, progress) ? next : null
+}
+
+/**
+ * Regla D3 validada del lado servidor: video completado sólo si la posición
+ * reportada alcanza el ≥90% de la duración. Duración null/0 → no se puede
+ * validar → no aceptar completed=true.
+ */
+export function isVideoCompletionValid(
+  lastPositionSec: number,
+  durationSec: number | null | undefined,
+): boolean {
+  if (!durationSec || durationSec <= 0) return false
+  if (lastPositionSec < 0) return false
+  return lastPositionSec / durationSec >= 0.9
 }

@@ -2,8 +2,8 @@
 
 import {
   getModuleStatus,
+  isLessonAccessible,
   isLessonCompleted,
-  isModuleUnlocked,
 } from '@/lib/course-progress'
 import { cn } from '@/lib/utils'
 import type { ModuleStatus, ModuleWithLessons, ProgressMap } from '@/types/course'
@@ -21,7 +21,6 @@ export function LessonSidebar({ modules, progress, currentLessonId, onSelect }: 
     <nav className="rounded-lg border border-border bg-white p-2" aria-label="Temario del curso">
       {modules.map((mod, index) => {
         const status = getModuleStatus(modules, index, progress)
-        const unlocked = isModuleUnlocked(modules, index, progress)
         return (
           <div key={mod.id} className="mb-1">
             <div className="flex items-center gap-2 px-3 py-2">
@@ -38,22 +37,23 @@ export function LessonSidebar({ modules, progress, currentLessonId, onSelect }: 
             <ul>
               {mod.lessons.map((lesson) => {
                 const done = isLessonCompleted(progress, lesson.id)
+                const accessible = isLessonAccessible(modules, lesson.id, progress)
                 const active = lesson.id === currentLessonId
                 return (
                   <li key={lesson.id}>
                     <button
                       type="button"
-                      disabled={!unlocked}
+                      disabled={!accessible}
                       onClick={() => onSelect(lesson.id)}
                       aria-current={active ? 'true' : undefined}
                       className={cn(
                         'flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm',
-                        !unlocked && 'cursor-not-allowed text-ink-muted',
-                        unlocked && !active && 'text-ink-main hover:bg-mist',
+                        !accessible && 'cursor-not-allowed text-ink-muted',
+                        accessible && !active && 'text-ink-main hover:bg-mist',
                         active && 'bg-teal-pale font-medium text-teal',
                       )}
                     >
-                      <LessonStatusIcon done={done} locked={!unlocked} />
+                      <LessonStatusIcon done={done} locked={!accessible} />
                       <span className="flex-1 truncate">{lesson.title}</span>
                       {lesson.duration_min != null && (
                         <span className="text-xs text-ink-muted">{lesson.duration_min}m</span>

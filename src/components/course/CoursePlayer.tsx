@@ -6,7 +6,13 @@ import { CourseTopbar } from '@/components/course/CourseTopbar'
 import { EvalModal } from '@/components/course/EvalModal'
 import { LessonSidebar } from '@/components/course/LessonSidebar'
 import { LessonViewer } from '@/components/course/LessonViewer'
-import { allModulesCompleted, isLessonAccessible, progressPct } from '@/lib/course-progress'
+import {
+  allModulesCompleted,
+  getNextAccessibleLessonId,
+  isLessonAccessible,
+  progressPct,
+} from '@/lib/course-progress'
+import { Button } from '@/components/ui/Button'
 import type { CourseSummary, LessonLite, ModuleWithLessons, ProgressMap } from '@/types/course'
 
 interface CoursePlayerProps {
@@ -36,6 +42,14 @@ export function CoursePlayer({ course, modules, initialProgress, hasEvaluation }
   const currentLesson = useMemo(
     () => findLesson(modules, currentLessonId),
     [modules, currentLessonId],
+  )
+  // SPEC-REPRODUCTOR-PROGRESO §1.4: CTA explícito para avanzar. Solo aparece
+  // cuando el usuario completó la lección actual y hay una siguiente en el
+  // orden natural, respetando el desbloqueo progresivo.
+  const nextLessonId = useMemo(
+    () =>
+      currentLessonId ? getNextAccessibleLessonId(modules, currentLessonId, progress) : null,
+    [modules, currentLessonId, progress],
   )
 
   const handleComplete = useCallback((lessonId: string, lastPosition?: number) => {
@@ -77,15 +91,28 @@ export function CoursePlayer({ course, modules, initialProgress, hasEvaluation }
       {showEval && <EvalModal slug={course.slug} onClose={() => setShowEval(false)} />}
 
       <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-4 py-6 lg:flex-row">
-        <div className="min-w-0 lg:flex-1">
+        <div className="min-w-0 space-y-4 lg:flex-1">
           {currentLesson ? (
-            <LessonViewer
-              key={currentLesson.id}
-              lesson={currentLesson}
-              progressEntry={progress[currentLesson.id]}
-              onComplete={handleComplete}
-              onPosition={handlePosition}
-            />
+            <>
+              <LessonViewer
+                key={currentLesson.id}
+                lesson={currentLesson}
+                progressEntry={progress[currentLesson.id]}
+                onComplete={handleComplete}
+                onPosition={handlePosition}
+              />
+              {nextLessonId && (
+                <div className="flex justify-end">
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => setCurrentLessonId(nextLessonId)}
+                  >
+                    Siguiente lección →
+                  </Button>
+                </div>
+              )}
+            </>
           ) : (
             <p className="rounded-lg border border-border bg-white p-8 text-center text-ink-soft">
               Este curso todavía no tiene lecciones.

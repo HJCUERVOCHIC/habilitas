@@ -3,8 +3,10 @@ import { describe, expect, it } from 'vitest'
 import {
   allModulesCompleted,
   getModuleStatus,
+  getNextAccessibleLessonId,
   isLessonAccessible,
   isModuleUnlocked,
+  isVideoCompletionValid,
   progressPct,
 } from './course-progress'
 import type { ModuleWithLessons, ProgressMap } from '@/types/course'
@@ -57,5 +59,41 @@ describe('course-progress', () => {
     expect(progressPct(modules, {})).toBe(0)
     expect(progressPct(modules, completed('l1'))).toBe(33)
     expect(allModulesCompleted(modules, completed('l1', 'l2', 'l3'))).toBe(true)
+  })
+
+  it('siguiente lección accesible respeta el desbloqueo progresivo', () => {
+    // l1 completada → l2 accesible (mismo módulo).
+    expect(getNextAccessibleLessonId(modules, 'l1', completed('l1'))).toBe('l2')
+    // l1 no completada → no puedes saltar a l2 (no accesible aún).
+    expect(getNextAccessibleLessonId(modules, 'l1', {})).toBe(null)
+    // Fin de módulo: l2 completada + l1 completada → l3 accesible (mod2).
+    expect(getNextAccessibleLessonId(modules, 'l2', completed('l1', 'l2'))).toBe('l3')
+    // l3 es la última → no hay siguiente.
+    expect(getNextAccessibleLessonId(modules, 'l3', completed('l1', 'l2', 'l3'))).toBe(null)
+    // Lección desconocida → null.
+    expect(getNextAccessibleLessonId(modules, 'xx', {})).toBe(null)
+  })
+})
+
+describe('isVideoCompletionValid', () => {
+  it('acepta si la posición supera el 90% de la duración', () => {
+    expect(isVideoCompletionValid(90, 100)).toBe(true)
+    expect(isVideoCompletionValid(100, 100)).toBe(true)
+    expect(isVideoCompletionValid(95, 100)).toBe(true)
+  })
+
+  it('rechaza si la posición no llega al 90%', () => {
+    expect(isVideoCompletionValid(89, 100)).toBe(false)
+    expect(isVideoCompletionValid(0, 100)).toBe(false)
+  })
+
+  it('rechaza cuando duración es 0, null o undefined', () => {
+    expect(isVideoCompletionValid(50, 0)).toBe(false)
+    expect(isVideoCompletionValid(50, null)).toBe(false)
+    expect(isVideoCompletionValid(50, undefined)).toBe(false)
+  })
+
+  it('rechaza posición negativa', () => {
+    expect(isVideoCompletionValid(-1, 100)).toBe(false)
   })
 })
