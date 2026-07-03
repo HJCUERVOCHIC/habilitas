@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { unstable_noStore as noStore } from 'next/cache'
 import { notFound } from 'next/navigation'
 
 import { ArchiveCourseButton } from '@/components/admin/ArchiveCourseButton'
@@ -7,10 +8,24 @@ import { PublishPanel } from '@/components/admin/PublishPanel'
 import { createAdminClient } from '@/lib/supabase/admin'
 import type { CourseInput } from '@/app/admin/actions'
 
+// Triple opt-out del cache de Next para el detalle admin de un curso.
+// `force-dynamic` + `revalidate=0` + `fetchCache='force-no-store'` cubren el
+// bug REG-02 en el que una entry stale de la Data Cache (poblada por otra
+// ruta que hace la misma consulta por slug) devolvía `data:null` en el
+// retorno del reproductor. `force-no-store` es más estricto que el
+// `default-no-store` implícito de `force-dynamic`: rechaza el cache aunque
+// el fetch pida `force-cache` explícito. `noStore()` dentro del componente
+// remata a nivel de request. Sin esto, el patrón "curso→lección→volver"
+// servía un 404 desde cache.
 export const dynamic = 'force-dynamic'
+export const revalidate = 0
+export const fetchCache = 'force-no-store'
 
 export default async function EditarCursoPage({ params }: { params: { slug: string } }) {
+  noStore()
+
   const admin = createAdminClient()
+
   const { data: course, error: courseError } = await admin
     .from('courses')
     .select(
@@ -18,6 +33,7 @@ export default async function EditarCursoPage({ params }: { params: { slug: stri
     )
     .eq('slug', params.slug)
     .maybeSingle()
+
   if (courseError) {
     console.error('[admin/cursos/[slug]] error en consulta de curso:', courseError.message, {
       slug: params.slug,
