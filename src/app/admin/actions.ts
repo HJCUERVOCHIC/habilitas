@@ -4,8 +4,87 @@ import { revalidatePath } from 'next/cache'
 
 import { getPublishChecklist } from '@/lib/publish-checklist'
 import { getAdminUser } from '@/lib/require-admin'
+import {
+  revalidateCourse,
+  revalidateLesson,
+  revalidateStructure,
+} from '@/lib/revalidate-admin'
 import { slugify } from '@/lib/slug'
 import { createAdminClient } from '@/lib/supabase/admin'
+
+// Lookups mínimos para resolver el slug del curso desde ids intermedios.
+// Necesarios para invalidar el Router Cache tras una mutación cuando el
+// action recibe moduleId o lessonId en vez del slug (SPEC-FIX-CACHE-ADMIN §1.2).
+//
+// Se resuelven encadenando selects de columnas directas en vez de recursos
+// embebidos (`courses!inner(slug)`): la forma que PostgREST devuelve para un
+// embed depende de cómo detecte la cardinalidad de la relación y puede llegar
+// como array. El genérico de maybeSingle<> es una anotación de tipos, no una
+// validación en runtime, así que un array hacía que `data.courses.slug` fuera
+// undefined, la función devolviera null y la invalidación se saltara en
+// silencio. Los selects directos no tienen esa ambigüedad.
+//
+// Los logs convierten un fallo silencioso en uno visible: si la invalidación
+// no ocurre, queda constancia en la terminal del servidor.
+async function slugForCourseId(
+  admin: ReturnType<typeof createAdminClient>,
+  courseId: string,
+): Promise<string | null> {
+  const { data, error } = await admin
+    .from('courses')
+    .select('slug')
+    .eq('id', courseId)
+    .maybeSingle<{ slug: string }>()
+  if (error) {
+    console.error('[revalidate] slugForCourseId falló:', courseId, error.message)
+    return null
+  }
+  if (!data?.slug) {
+    console.warn('[revalidate] slugForCourseId sin resultado para:', courseId)
+    return null
+  }
+  return data.slug
+}
+
+async function slugForModuleId(
+  admin: ReturnType<typeof createAdminClient>,
+  moduleId: string,
+): Promise<string | null> {
+  const { data, error } = await admin
+    .from('modules')
+    .select('course_id')
+    .eq('id', moduleId)
+    .maybeSingle<{ course_id: string }>()
+  if (error) {
+    console.error('[revalidate] slugForModuleId falló:', moduleId, error.message)
+    return null
+  }
+  if (!data?.course_id) {
+    console.warn('[revalidate] slugForModuleId sin course_id para:', moduleId)
+    return null
+  }
+  return slugForCourseId(admin, data.course_id)
+}
+
+async function slugForLessonId(
+  admin: ReturnType<typeof createAdminClient>,
+  lessonId: string,
+): Promise<string | null> {
+  const { data, error } = await admin
+    .from('lessons')
+    .select('module_id')
+    .eq('id', lessonId)
+    .maybeSingle<{ module_id: string }>()
+  if (error) {
+    console.error('[revalidate] slugForLessonId falló:', lessonId, error.message)
+    return null
+  }
+  if (!data?.module_id) {
+    console.warn('[revalidate] slugForLessonId sin module_id para:', lessonId)
+    return null
+  }
+  return slugForModuleId(admin, data.module_id)
+}
 
 /**
  * Devuelve un slug único en public.courses partiendo de `base`. Si está libre
@@ -79,7 +158,7 @@ export async function createCourse(input: CourseInput): Promise<Result & { slug?
     published: false,
   })
   if (error) return { ok: false, error: error.message }
-  revalidatePath('/admin/cursos')
+  revalidateCourse(slug)
   return { ok: true, slug }
 }
 
@@ -103,8 +182,7 @@ export async function updateCourse(courseId: string, input: CourseInput): Promis
     })
     .eq('id', courseId)
   if (error) return { ok: false, error: error.message }
-  revalidatePath(`/admin/cursos/${input.slug}`)
-  revalidatePath('/admin/cursos')
+  revalidateCourse(input.slug)
   return { ok: true }
 }
 
@@ -150,8 +228,9 @@ export async function archiveCourse(courseId: string): Promise<Result> {
     .update({ archived_at: now, updated_at: now })
     .eq('id', courseId)
   if (error) return { ok: false, error: error.message }
-  revalidatePath('/admin/cursos')
-  revalidatePath('/certificaciones')
+  const slug = await slugForCourseId(admin, courseId)
+  if (slug) revalidateCourse(slug)
+  else revalidatePath('/admin/cursos')
   return { ok: true }
 }
 
@@ -164,7 +243,9 @@ export async function restoreCourse(courseId: string): Promise<Result> {
     .update({ archived_at: null, updated_at: new Date().toISOString() })
     .eq('id', courseId)
   if (error) return { ok: false, error: error.message }
-  revalidatePath('/admin/cursos')
+  const slug = await slugForCourseId(admin, courseId)
+  if (slug) revalidateCourse(slug)
+  else revalidatePath('/admin/cursos')
   return { ok: true }
 }
 
@@ -198,8 +279,9 @@ export async function setPublished(courseId: string, published: boolean): Promis
 
   const { error } = await admin.from('courses').update(update).eq('id', courseId)
   if (error) return { ok: false, error: error.message }
-  revalidatePath('/admin/cursos')
-  revalidatePath('/certificaciones')
+  const slug = await slugForCourseId(admin, courseId)
+  if (slug) revalidateCourse(slug)
+  else revalidatePath('/admin/cursos')
   return { ok: true }
 }
 
@@ -215,7 +297,8 @@ export async function createModule(courseId: string, title: string): Promise<Res
     .from('modules')
     .insert({ course_id: courseId, title: title.trim(), order_index: (count ?? 0) + 1 })
   if (error) return { ok: false, error: error.message }
-  revalidatePath('/admin/cursos')
+  const slug = await slugForCourseId(admin, courseId)
+  if (slug) revalidateStructure(slug)
   return { ok: true }
 }
 
@@ -227,7 +310,10 @@ export async function updateModule(moduleId: string, title: string): Promise<Res
     .from('modules')
     .update({ title: title.trim() })
     .eq('id', moduleId)
-  return error ? { ok: false, error: error.message } : { ok: true }
+  if (error) return { ok: false, error: error.message }
+  const slug = await slugForModuleId(admin, moduleId)
+  if (slug) revalidateStructure(slug)
+  return { ok: true }
 }
 
 /**
@@ -277,14 +363,20 @@ export async function reorderModule(
     .update({ order_index: target.order_index })
     .eq('id', neighbor.id)
   if (b.error) return { ok: false, error: b.error.message }
+  const slug = await slugForCourseId(admin, target.course_id)
+  if (slug) revalidateStructure(slug)
   return { ok: true }
 }
 
 export async function deleteModule(moduleId: string): Promise<Result> {
   if (!(await ensureAdmin())) return { ok: false, error: 'No autorizado.' }
   const admin = createAdminClient()
+  // Resolvemos slug antes del delete: después el join sería imposible.
+  const slug = await slugForModuleId(admin, moduleId)
   const { error } = await admin.from('modules').delete().eq('id', moduleId)
-  return error ? { ok: false, error: error.message } : { ok: true }
+  if (error) return { ok: false, error: error.message }
+  if (slug) revalidateStructure(slug)
+  return { ok: true }
 }
 
 export interface LessonInput {
@@ -313,6 +405,8 @@ export async function createLesson(moduleId: string, input: LessonInput): Promis
     transcript: input.transcript.trim() || null,
   })
   if (error) return { ok: false, error: error.message }
+  const slug = await slugForModuleId(admin, moduleId)
+  if (slug) revalidateStructure(slug)
   return { ok: true }
 }
 
@@ -332,7 +426,10 @@ export async function updateLesson(
     .from('lessons')
     .update({ title: input.title.trim(), content_type: input.content_type })
     .eq('id', lessonId)
-  return error ? { ok: false, error: error.message } : { ok: true }
+  if (error) return { ok: false, error: error.message }
+  const slug = await slugForLessonId(admin, lessonId)
+  if (slug) revalidateLesson(slug, lessonId)
+  return { ok: true }
 }
 
 export async function reorderLesson(
@@ -377,14 +474,20 @@ export async function reorderLesson(
     .update({ order_index: target.order_index })
     .eq('id', neighbor.id)
   if (b.error) return { ok: false, error: b.error.message }
+  const slug = await slugForLessonId(admin, lessonId)
+  if (slug) revalidateStructure(slug)
   return { ok: true }
 }
 
 export async function deleteLesson(lessonId: string): Promise<Result> {
   if (!(await ensureAdmin())) return { ok: false, error: 'No autorizado.' }
   const admin = createAdminClient()
+  // Resolvemos slug antes del delete: después el join sería imposible.
+  const slug = await slugForLessonId(admin, lessonId)
   const { error } = await admin.from('lessons').delete().eq('id', lessonId)
-  return error ? { ok: false, error: error.message } : { ok: true }
+  if (error) return { ok: false, error: error.message }
+  if (slug) revalidateStructure(slug)
+  return { ok: true }
 }
 
 export async function ensureEvaluation(courseId: string): Promise<Result> {

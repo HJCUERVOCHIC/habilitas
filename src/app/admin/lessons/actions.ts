@@ -1,7 +1,6 @@
 'use server'
 
 import { randomUUID } from 'node:crypto'
-import { revalidatePath } from 'next/cache'
 
 import { getAdminUser } from '@/lib/require-admin'
 import {
@@ -10,12 +9,32 @@ import {
   getSignedUploadUrl,
   isR2Configured,
 } from '@/lib/r2'
+import { revalidateLesson } from '@/lib/revalidate-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
 
 type Result = { ok: boolean; error?: string }
 
 async function ensureAdmin(): Promise<boolean> {
   return (await getAdminUser()) !== null
+}
+
+/**
+ * Devuelve el slug del curso al que pertenece la lección. Necesario para
+ * llamar a `revalidateLesson` con rutas literales tras cada mutación
+ * (SPEC-FIX-CACHE-ADMIN §1.2). Duplicado con `slugForLessonId` en
+ * `src/app/admin/actions.ts`: se mantiene local para no cruzar módulos
+ * server-only.
+ */
+async function slugForLessonId(
+  admin: ReturnType<typeof createAdminClient>,
+  lessonId: string,
+): Promise<string | null> {
+  const { data } = await admin
+    .from('lessons')
+    .select('modules!inner(courses!inner(slug))')
+    .eq('id', lessonId)
+    .maybeSingle<{ modules: { courses: { slug: string } | null } | null }>()
+  return data?.modules?.courses?.slug ?? null
 }
 
 // SPEC-CONTENIDO-LECCIONES §2 CA-5 — validación por tipo y tamaño.
@@ -61,7 +80,10 @@ export async function updateLessonBody(
   // Cadena vacía → null para que el viewer muestre el placeholder consistente.
   const value = bodyMd.trim() === '' ? null : bodyMd
   const { error } = await admin.from('lessons').update({ body_md: value }).eq('id', lessonId)
-  return error ? { ok: false, error: error.message } : { ok: true }
+  if (error) return { ok: false, error: error.message }
+  const slug = await slugForLessonId(admin, lessonId)
+  if (slug) revalidateLesson(slug, lessonId)
+  return { ok: true }
 }
 
 /**
@@ -151,7 +173,8 @@ export async function confirmLessonUpload(input: {
     // Borrado de huérfano: best-effort, ignoramos fallos.
     await deleteR2Object(previous.content_r2_key)
   }
-  revalidatePath('/admin/cursos')
+  const slug = await slugForLessonId(admin, input.lessonId)
+  if (slug) revalidateLesson(slug, input.lessonId)
   return { ok: true }
 }
 
@@ -182,6 +205,8 @@ export async function clearLessonContent(lessonId: string): Promise<Result> {
   if (previous?.content_r2_key) {
     await deleteR2Object(previous.content_r2_key)
   }
+  const slug = await slugForLessonId(admin, lessonId)
+  if (slug) revalidateLesson(slug, lessonId)
   return { ok: true }
 }
 

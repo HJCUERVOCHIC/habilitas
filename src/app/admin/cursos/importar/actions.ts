@@ -1,9 +1,9 @@
 'use server'
 
 import { Client } from 'pg'
-import { revalidatePath } from 'next/cache'
 
 import { getAdminUser } from '@/lib/require-admin'
+import { revalidateCourse, revalidateStructure } from '@/lib/revalidate-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
 import {
   parseAndValidateYaml,
@@ -91,7 +91,8 @@ export async function importYamlCourse(text: string): Promise<ImportResponse> {
     await client.end()
   }
 
-  revalidatePath('/admin/cursos')
+  revalidateCourse(result.payload.slug)
+  revalidateStructure(result.payload.slug)
   return { ok: true, slug: result.payload.slug }
 }
 
