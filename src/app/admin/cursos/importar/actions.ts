@@ -110,6 +110,13 @@ async function insertCourse(client: Client, payload: ImportPayload): Promise<voi
   if (!courseRow) throw new Error('INSERT courses no devolvió fila.')
   const courseId = courseRow.id
 
+  // Guardamos el id de cada módulo insertado, indexado tanto por su índice
+  // 1-based como por su título — esto permite resolver la etiqueta
+  // `modulo` del YAML de preguntas por cualquiera de las dos vías
+  // (SPEC-PRACTICA-POR-MODULO §1.6).
+  const moduleIdByIndex = new Map<number, string>()
+  const moduleIdByTitle = new Map<string, string>()
+
   for (let mi = 0; mi < payload.modules.length; mi++) {
     const mod = payload.modules[mi]
     if (!mod) continue
@@ -121,6 +128,8 @@ async function insertCourse(client: Client, payload: ImportPayload): Promise<voi
     const modRow = modRes.rows[0]
     if (!modRow) throw new Error('INSERT modules no devolvió fila.')
     const moduleId = modRow.id
+    moduleIdByIndex.set(mi + 1, moduleId)
+    moduleIdByTitle.set(mod.title, moduleId)
 
     for (let li = 0; li < mod.lessons.length; li++) {
       const lesson = mod.lessons[li]
@@ -155,10 +164,30 @@ async function insertCourse(client: Client, payload: ImportPayload): Promise<voi
     for (let qi = 0; qi < ev.questions.length; qi++) {
       const q = ev.questions[qi]
       if (!q) continue
+      let moduleId: string | null = null
+      if (q.module_ref) {
+        moduleId =
+          q.module_ref.kind === 'index'
+            ? (moduleIdByIndex.get(q.module_ref.value) ?? null)
+            : (moduleIdByTitle.get(q.module_ref.value) ?? null)
+        if (!moduleId) {
+          // La etiqueta no coincide con ningún módulo del curso. Falla la
+          // importación completa (transacción atómica) con un mensaje
+          // legible — es preferible a insertar preguntas sin etiquetar en
+          // silencio, que dejaría la práctica vacía sin explicación.
+          throw new Error(
+            `Pregunta ${qi + 1}: la etiqueta de módulo ${
+              q.module_ref.kind === 'index'
+                ? `(índice ${q.module_ref.value})`
+                : `"${q.module_ref.value}"`
+            } no coincide con ningún módulo del curso.`,
+          )
+        }
+      }
       await client.query(
         `insert into public.questions
-           (evaluation_id, order_index, text, options, correct_option, feedback_correct)
-         values ($1, $2, $3, $4::jsonb, $5, $6)`,
+           (evaluation_id, order_index, text, options, correct_option, feedback_correct, module_id)
+         values ($1, $2, $3, $4::jsonb, $5, $6, $7)`,
         [
           evaluationId,
           qi + 1,
@@ -166,6 +195,7 @@ async function insertCourse(client: Client, payload: ImportPayload): Promise<voi
           JSON.stringify(q.options),
           q.correct_option,
           q.feedback_correct,
+          moduleId,
         ],
       )
     }

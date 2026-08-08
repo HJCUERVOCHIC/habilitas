@@ -18,6 +18,11 @@ interface CoursePlayerProps {
   modules: ModuleWithLessons[]
   initialProgress: ProgressMap
   hasEvaluation: boolean
+  /**
+   * IDs de módulos que ofrecen práctica formativa (≥3 preguntas
+   * etiquetadas). SPEC-PRACTICA-POR-MODULO §1.4: opcionalidad emergente.
+   */
+  moduleIdsWithPractice: string[]
 }
 
 function findLesson(modules: ModuleWithLessons[], lessonId: string | null): LessonLite | null {
@@ -29,7 +34,13 @@ function findLesson(modules: ModuleWithLessons[], lessonId: string | null): Less
   return null
 }
 
-export function CoursePlayer({ course, modules, initialProgress, hasEvaluation }: CoursePlayerProps) {
+export function CoursePlayer({
+  course,
+  modules,
+  initialProgress,
+  hasEvaluation,
+  moduleIdsWithPractice,
+}: CoursePlayerProps) {
   const [progress, setProgress] = useState<ProgressMap>(initialProgress)
   const firstLessonId = modules[0]?.lessons[0]?.id ?? null
   const [currentLessonId, setCurrentLessonId] = useState<string | null>(firstLessonId)
@@ -119,6 +130,8 @@ export function CoursePlayer({ course, modules, initialProgress, hasEvaluation }
             progress={progress}
             currentLessonId={currentLessonId}
             onSelect={selectLesson}
+            courseSlug={course.slug}
+            moduleIdsWithPractice={moduleIdsWithPractice}
           />
         </aside>
       </div>

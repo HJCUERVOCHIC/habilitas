@@ -1,6 +1,8 @@
 import { redirect } from 'next/navigation'
 
 import { CoursePlayer } from '@/components/course/CoursePlayer'
+import { PRACTICE_MIN_QUESTIONS } from '@/lib/practice'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import type { ModuleWithLessons, ProgressMap } from '@/types/course'
 
@@ -56,6 +58,28 @@ export default async function CursoPage({ params }: { params: { slug: string } }
     .eq('course_id', course.id)
     .maybeSingle()
 
+  // Conjunto de módulos que ofrecen práctica formativa (≥3 preguntas
+  // etiquetadas). SPEC-PRACTICA-POR-MODULO §1.4 (CA-5/6): "opcionalidad
+  // emergente" — la entrada aparece si el contenido lo justifica, sin
+  // interruptor. Se calcula server-side con el admin client (RLS de
+  // questions solo admite admin_all).
+  const modulesWithPractice = new Set<string>()
+  if (evaluation && moduleIds.length > 0) {
+    const admin = createAdminClient()
+    const { data: bank } = await admin
+      .from('questions')
+      .select('module_id')
+      .eq('evaluation_id', evaluation.id)
+      .in('module_id', moduleIds)
+    const counts = new Map<string, number>()
+    for (const q of bank ?? []) {
+      if (q.module_id) counts.set(q.module_id, (counts.get(q.module_id) ?? 0) + 1)
+    }
+    counts.forEach((n, mid) => {
+      if (n >= PRACTICE_MIN_QUESTIONS) modulesWithPractice.add(mid)
+    })
+  }
+
   const modulesWith: ModuleWithLessons[] = (modules ?? []).map((m) => ({
     id: m.id,
     title: m.title,
@@ -85,6 +109,7 @@ export default async function CursoPage({ params }: { params: { slug: string } }
       modules={modulesWith}
       initialProgress={initialProgress}
       hasEvaluation={Boolean(evaluation)}
+      moduleIdsWithPractice={Array.from(modulesWithPractice)}
     />
   )
 }

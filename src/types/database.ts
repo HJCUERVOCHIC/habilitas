@@ -339,6 +339,7 @@ export type Database = {
           correct_option: number
           feedback_correct: string | null
           feedback_wrong: string | null
+          module_id: string | null
           created_at: string
         }
         Insert: {
@@ -351,6 +352,7 @@ export type Database = {
           correct_option: number
           feedback_correct?: string | null
           feedback_wrong?: string | null
+          module_id?: string | null
           created_at?: string
         }
         Update: {
@@ -363,7 +365,41 @@ export type Database = {
           correct_option?: number
           feedback_correct?: string | null
           feedback_wrong?: string | null
+          module_id?: string | null
           created_at?: string
+        }
+        Relationships: []
+      }
+      practice_attempts: {
+        Row: {
+          id: string
+          user_id: string
+          course_id: string
+          module_id: string
+          started_at: string
+          finished_at: string | null
+          total_questions: number
+          correct_count: number
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          course_id: string
+          module_id: string
+          started_at?: string
+          finished_at?: string | null
+          total_questions?: number
+          correct_count?: number
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          course_id?: string
+          module_id?: string
+          started_at?: string
+          finished_at?: string | null
+          total_questions?: number
+          correct_count?: number
         }
         Relationships: []
       }

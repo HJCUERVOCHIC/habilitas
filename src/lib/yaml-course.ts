@@ -84,6 +84,13 @@ export interface ImportQuestion {
   correct_option: number
   feedback_correct: string | null
   multiple_correct_warning: boolean
+  /**
+   * Referencia opcional al módulo etiquetado para práctica formativa
+   * (SPEC-PRACTICA-POR-MODULO §1.6). Se acepta como índice 1-based (número)
+   * o como título exacto (string). Se resuelve a `module_id` en el
+   * importador; sin él, la pregunta solo entra en la evaluación final.
+   */
+  module_ref: { kind: 'index'; value: number } | { kind: 'title'; value: string } | null
 }
 
 export interface ImportEvaluation {
@@ -354,6 +361,24 @@ export function parseAndValidateYaml(text: string): ValidationResult {
           )
         }
         const explicacion = strField(qo, 'explicacion', errors, false, where)
+        // Etiqueta de módulo opcional (SPEC-PRACTICA-POR-MODULO §1.6).
+        // Aceptamos entero (índice 1-based) o cadena (título exacto). Los
+        // errores tempranos aquí evitan importaciones con etiquetas rotas.
+        let moduleRef: ImportQuestion['module_ref'] = null
+        const moduloRaw = qo.modulo
+        if (moduloRaw != null && moduloRaw !== '') {
+          if (typeof moduloRaw === 'number' && Number.isInteger(moduloRaw)) {
+            if (moduloRaw < 1) {
+              errors.push(`${where}: "modulo" como índice debe ser ≥ 1.`)
+            } else {
+              moduleRef = { kind: 'index', value: moduloRaw }
+            }
+          } else if (typeof moduloRaw === 'string' && moduloRaw.trim()) {
+            moduleRef = { kind: 'title', value: moduloRaw.trim() }
+          } else {
+            errors.push(`${where}: "modulo" debe ser entero (índice) o texto (título).`)
+          }
+        }
         const firstCorrect = correctIndices[0]
         if (enunciado && firstCorrect !== undefined) {
           questions.push({
@@ -362,6 +387,7 @@ export function parseAndValidateYaml(text: string): ValidationResult {
             correct_option: firstCorrect,
             feedback_correct: explicacion?.trim() || null,
             multiple_correct_warning: correctIndices.length > 1,
+            module_ref: moduleRef,
           })
         }
       }

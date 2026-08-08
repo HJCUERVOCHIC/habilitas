@@ -607,6 +607,49 @@ export interface QuestionInput {
   correct_option: number
   feedback_correct: string
   feedback_wrong: string
+  /**
+   * Etiqueta de módulo para la práctica formativa
+   * (SPEC-PRACTICA-POR-MODULO §1.1). `null` = "sin etiquetar" — la pregunta
+   * solo entra en la evaluación final. Debe pertenecer al MISMO curso que
+   * la evaluación, o la validación server-side la rechaza.
+   */
+  module_id: string | null
+}
+
+/**
+ * Verifica que `moduleId` pertenezca al mismo curso que la evaluación de
+ * esa pregunta. Sin esta validación, un admin (o un YAML malformado) podría
+ * etiquetar una pregunta con un módulo de otro curso; ese estado
+ * inconsistente no se puede recuperar leyendo. Se rechaza en escritura,
+ * no en lectura (§1.1). Selects encadenados por columna directa: primero
+ * el `course_id` de la evaluación, luego el `course_id` del módulo.
+ */
+async function assertModuleBelongsToEvaluation(
+  admin: ReturnType<typeof createAdminClient>,
+  evaluationId: string,
+  moduleId: string | null,
+): Promise<Result | null> {
+  if (moduleId == null) return null
+  const { data: evaluation } = await admin
+    .from('evaluations')
+    .select('course_id')
+    .eq('id', evaluationId)
+    .maybeSingle<{ course_id: string }>()
+  if (!evaluation?.course_id) return { ok: false, error: 'Evaluación no encontrada.' }
+  const { data: mod } = await admin
+    .from('modules')
+    .select('course_id')
+    .eq('id', moduleId)
+    .maybeSingle<{ course_id: string }>()
+  if (!mod?.course_id) return { ok: false, error: 'Módulo no encontrado.' }
+  if (mod.course_id !== evaluation.course_id) {
+    return {
+      ok: false,
+      error:
+        'El módulo elegido pertenece a otro curso. Solo se puede etiquetar con un módulo del mismo curso.',
+    }
+  }
+  return null
 }
 
 export async function createQuestion(
@@ -623,6 +666,8 @@ export async function createQuestion(
   const admin = createAdminClient()
   const guard = await refuseIfPublished(admin, await courseIdForEvaluation(admin, evaluationId))
   if (guard) return guard
+  const moduleGuard = await assertModuleBelongsToEvaluation(admin, evaluationId, input.module_id)
+  if (moduleGuard) return moduleGuard
   const { count } = await admin
     .from('questions')
     .select('*', { count: 'exact', head: true })
@@ -636,6 +681,7 @@ export async function createQuestion(
     correct_option: input.correct_option,
     feedback_correct: input.feedback_correct.trim() || null,
     feedback_wrong: input.feedback_wrong.trim() || null,
+    module_id: input.module_id,
   })
   return error ? { ok: false, error: error.message } : { ok: true }
 }
@@ -654,6 +700,19 @@ export async function updateQuestion(
   const admin = createAdminClient()
   const guard = await refuseIfPublished(admin, await courseIdForQuestion(admin, questionId))
   if (guard) return guard
+  // Resolvemos la evaluación de la pregunta para validar module_id.
+  const { data: current } = await admin
+    .from('questions')
+    .select('evaluation_id')
+    .eq('id', questionId)
+    .maybeSingle<{ evaluation_id: string }>()
+  if (!current?.evaluation_id) return { ok: false, error: 'Pregunta no encontrada.' }
+  const moduleGuard = await assertModuleBelongsToEvaluation(
+    admin,
+    current.evaluation_id,
+    input.module_id,
+  )
+  if (moduleGuard) return moduleGuard
   const { error } = await admin
     .from('questions')
     .update({
@@ -663,6 +722,7 @@ export async function updateQuestion(
       correct_option: input.correct_option,
       feedback_correct: input.feedback_correct.trim() || null,
       feedback_wrong: input.feedback_wrong.trim() || null,
+      module_id: input.module_id,
     })
     .eq('id', questionId)
   return error ? { ok: false, error: error.message } : { ok: true }

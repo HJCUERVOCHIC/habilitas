@@ -29,7 +29,20 @@ export interface AdminQuestion {
   options: string[]
   feedback_correct: string | null
   feedback_wrong: string | null
+  module_id: string | null
 }
+
+export interface ModuleOption {
+  id: string
+  title: string
+  orderIndex: number
+}
+
+/**
+ * Umbral de práctica formativa por módulo (SPEC-PRACTICA-POR-MODULO §4.7).
+ * Bajo este número, la entrada "Practicar" no aparece en el reproductor.
+ */
+const PRACTICE_MIN_QUESTIONS = 3
 
 interface EvaluationManagerProps {
   courseId: string
@@ -39,6 +52,7 @@ interface EvaluationManagerProps {
   questionsPerAttempt: number
   passScore: number
   questions: AdminQuestion[]
+  modules: ModuleOption[]
 }
 
 export function EvaluationManager({
@@ -49,6 +63,7 @@ export function EvaluationManager({
   questionsPerAttempt,
   passScore,
   questions,
+  modules,
 }: EvaluationManagerProps) {
   const router = useRouter()
   const [busy, setBusy] = useState(false)
@@ -97,6 +112,8 @@ export function EvaluationManager({
         meetsMinimum={meetsMinimum}
       />
 
+      <PracticeCoverage modules={modules} questions={questions} />
+
       <div className="space-y-2">
         {questions.map((q, index) => (
           <QuestionRow
@@ -107,6 +124,7 @@ export function EvaluationManager({
             isLast={index === questions.length - 1}
             onMutated={() => router.refresh()}
             locked={courseIsPublished}
+            modules={modules}
           />
         ))}
         {questions.length === 0 && (
@@ -120,8 +138,88 @@ export function EvaluationManager({
         evaluationId={evaluationId}
         onDone={() => router.refresh()}
         locked={courseIsPublished}
+        modules={modules}
       />
     </div>
+  )
+}
+
+/**
+ * Vista de cobertura de práctica por módulo (SPEC-PRACTICA-POR-MODULO §1.5).
+ * El admin ve de un vistazo qué módulos ofrecen práctica (≥3 preguntas
+ * etiquetadas) y cuáles no. También muestra el conteo de preguntas sin
+ * etiquetar — útil para saber cuántas viven solo en la evaluación final.
+ */
+function PracticeCoverage({
+  modules,
+  questions,
+}: {
+  modules: ModuleOption[]
+  questions: AdminQuestion[]
+}) {
+  const countByModule = new Map<string, number>()
+  let unlabeled = 0
+  for (const q of questions) {
+    if (q.module_id == null) {
+      unlabeled++
+    } else {
+      countByModule.set(q.module_id, (countByModule.get(q.module_id) ?? 0) + 1)
+    }
+  }
+  return (
+    <section
+      className="rounded-lg border border-border bg-white p-4 shadow-sm"
+      aria-labelledby="practice-coverage-heading"
+    >
+      <h2
+        id="practice-coverage-heading"
+        className="text-sm font-semibold uppercase tracking-wide text-ink-muted"
+      >
+        Cobertura de práctica por módulo
+      </h2>
+      <p className="mt-1 text-xs text-ink-soft">
+        Un módulo ofrece práctica formativa a los estudiantes cuando tiene al menos{' '}
+        {PRACTICE_MIN_QUESTIONS} preguntas etiquetadas. La evaluación final sortea de
+        todo el banco, etiquetadas o no.
+      </p>
+      {modules.length === 0 ? (
+        <p className="mt-3 text-sm text-ink-muted">
+          Este curso aún no tiene módulos.
+        </p>
+      ) : (
+        <ul className="mt-3 space-y-2">
+          {modules.map((m) => {
+            const n = countByModule.get(m.id) ?? 0
+            const ready = n >= PRACTICE_MIN_QUESTIONS
+            return (
+              <li
+                key={m.id}
+                className="flex items-center justify-between rounded-md border border-border bg-mist px-3 py-2 text-sm"
+              >
+                <span className="text-ink-main">
+                  <span className="text-ink-muted">{m.orderIndex}.</span> {m.title}
+                </span>
+                <span
+                  className={
+                    ready
+                      ? 'rounded-md bg-green-pale px-2 py-0.5 text-xs font-semibold text-green-ok'
+                      : 'rounded-md bg-mist px-2 py-0.5 text-xs font-semibold text-ink-soft'
+                  }
+                >
+                  {n} {n === 1 ? 'pregunta' : 'preguntas'} · {ready ? 'práctica lista' : 'sin práctica'}
+                </span>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+      {unlabeled > 0 && (
+        <p className="mt-3 text-xs text-ink-soft">
+          {unlabeled} pregunta{unlabeled === 1 ? '' : 's'} sin etiquetar — solo entra
+          {unlabeled === 1 ? '' : 'n'} en la evaluación final.
+        </p>
+      )}
+    </section>
   )
 }
 
@@ -278,6 +376,7 @@ function QuestionRow({
   isLast,
   onMutated,
   locked,
+  modules,
 }: {
   question: AdminQuestion
   index: number
@@ -285,6 +384,7 @@ function QuestionRow({
   isLast: boolean
   onMutated: () => void
   locked: boolean
+  modules: ModuleOption[]
 }) {
   const [editing, setEditing] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -310,6 +410,7 @@ function QuestionRow({
         <QuestionForm
           initial={question}
           submitLabel="Guardar pregunta"
+          modules={modules}
           onSubmit={async (input) => {
             const res = await updateQuestion(question.id, input)
             if (res.ok) {
@@ -324,6 +425,10 @@ function QuestionRow({
     )
   }
 
+  const moduleLabel = question.module_id
+    ? modules.find((m) => m.id === question.module_id)?.title
+    : null
+
   return (
     <div className="flex items-start justify-between gap-4 rounded-md border border-border bg-white p-3 shadow-sm">
       <div className="min-w-0 text-sm">
@@ -333,6 +438,14 @@ function QuestionRow({
         <p className="text-ink-muted">
           Correcta: {String.fromCharCode(65 + question.correct_option)}.{' '}
           {question.options[question.correct_option]}
+        </p>
+        <p className="mt-0.5 text-xs text-ink-muted">
+          Etiqueta:{' '}
+          {moduleLabel ? (
+            <span className="font-medium text-ink-soft">{moduleLabel}</span>
+          ) : (
+            <span className="italic text-ink-muted">sin etiquetar (solo final)</span>
+          )}
         </p>
         {question.feedback_correct && (
           <p className="mt-1 text-xs text-ink-soft">
@@ -386,10 +499,12 @@ function NewQuestionForm({
   evaluationId,
   onDone,
   locked,
+  modules,
 }: {
   evaluationId: string
   onDone: () => void
   locked: boolean
+  modules: ModuleOption[]
 }) {
   const [resetKey, setResetKey] = useState(0)
   if (locked) return null
@@ -398,6 +513,7 @@ function NewQuestionForm({
       <h3 className="mb-3 font-semibold text-charcoal">Nueva pregunta</h3>
       <QuestionForm
         key={resetKey}
+        modules={modules}
         initial={{
           text: '',
           context: null,
@@ -405,6 +521,7 @@ function NewQuestionForm({
           correct_option: 0,
           feedback_correct: null,
           feedback_wrong: null,
+          module_id: null,
         }}
         submitLabel="Añadir pregunta"
         onSubmit={async (input) => {
@@ -425,6 +542,7 @@ function QuestionForm({
   submitLabel,
   onSubmit,
   onCancel,
+  modules,
 }: {
   initial: {
     text: string
@@ -433,10 +551,12 @@ function QuestionForm({
     correct_option: number
     feedback_correct: string | null
     feedback_wrong: string | null
+    module_id: string | null
   }
   submitLabel: string
   onSubmit: (input: QuestionInput) => Promise<{ ok: boolean; error?: string }>
   onCancel?: () => void
+  modules: ModuleOption[]
 }) {
   const [text, setText] = useState(initial.text)
   const [context, setContext] = useState(initial.context ?? '')
@@ -446,6 +566,7 @@ function QuestionForm({
   const [correct, setCorrect] = useState(initial.correct_option)
   const [fbOk, setFbOk] = useState(initial.feedback_correct ?? '')
   const [fbWrong, setFbWrong] = useState(initial.feedback_wrong ?? '')
+  const [moduleId, setModuleId] = useState<string>(initial.module_id ?? '')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
@@ -478,6 +599,7 @@ function QuestionForm({
       correct_option: correct,
       feedback_correct: fbOk,
       feedback_wrong: fbWrong,
+      module_id: moduleId || null,
     })
     setBusy(false)
     if (!res.ok) setError(res.error ?? 'Error.')
@@ -553,6 +675,29 @@ function QuestionForm({
           onChange={(e) => setFbWrong(e.target.value)}
         />
       </div>
+
+      <label className="mt-3 block text-sm">
+        <span className="mb-1 block text-xs uppercase tracking-wide text-ink-muted">
+          Etiqueta de módulo (opcional)
+        </span>
+        <select
+          className={FIELD}
+          value={moduleId}
+          onChange={(e) => setModuleId(e.target.value)}
+          aria-label="Módulo al que se etiqueta la pregunta"
+        >
+          <option value="">Sin etiquetar (solo evaluación final)</option>
+          {modules.map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.orderIndex}. {m.title}
+            </option>
+          ))}
+        </select>
+        <span className="mt-1 block text-xs text-ink-muted">
+          Etiquetar habilita esta pregunta para la práctica formativa de ese módulo.
+          Todas —etiquetadas o no— entran igual en la evaluación final.
+        </span>
+      </label>
 
       <div className="mt-3 flex flex-wrap items-center gap-3">
         <Button variant="primary" size="sm" onClick={submit} disabled={busy}>

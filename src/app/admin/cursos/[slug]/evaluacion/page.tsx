@@ -1,7 +1,11 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
-import { EvaluationManager, type AdminQuestion } from '@/components/admin/EvaluationManager'
+import {
+  EvaluationManager,
+  type AdminQuestion,
+  type ModuleOption,
+} from '@/components/admin/EvaluationManager'
 import { createAdminClient } from '@/lib/supabase/admin'
 
 export const dynamic = 'force-dynamic'
@@ -19,17 +23,24 @@ export default async function EvaluacionPage({ params }: { params: { slug: strin
     .maybeSingle()
   if (!course) notFound()
 
-  const { data: evaluation } = await admin
-    .from('evaluations')
-    .select('id, questions_per_attempt')
-    .eq('course_id', course.id)
-    .maybeSingle()
+  const [{ data: evaluation }, { data: modulesData }] = await Promise.all([
+    admin
+      .from('evaluations')
+      .select('id, questions_per_attempt')
+      .eq('course_id', course.id)
+      .maybeSingle(),
+    admin
+      .from('modules')
+      .select('id, title, order_index')
+      .eq('course_id', course.id)
+      .order('order_index'),
+  ])
 
   const { data: questions } = evaluation
     ? await admin
         .from('questions')
         .select(
-          'id, text, context, correct_option, options, order_index, feedback_correct, feedback_wrong',
+          'id, text, context, correct_option, options, order_index, feedback_correct, feedback_wrong, module_id',
         )
         .eq('evaluation_id', evaluation.id)
         .order('order_index')
@@ -43,6 +54,13 @@ export default async function EvaluacionPage({ params }: { params: { slug: strin
     options: toOptions(q.options),
     feedback_correct: q.feedback_correct,
     feedback_wrong: q.feedback_wrong,
+    module_id: q.module_id,
+  }))
+
+  const moduleOptions: ModuleOption[] = (modulesData ?? []).map((m) => ({
+    id: m.id,
+    title: m.title,
+    orderIndex: m.order_index,
   }))
 
   return (
@@ -64,6 +82,7 @@ export default async function EvaluacionPage({ params }: { params: { slug: strin
         questionsPerAttempt={evaluation?.questions_per_attempt ?? 10}
         passScore={course.pass_score}
         questions={adminQuestions}
+        modules={moduleOptions}
       />
     </div>
   )

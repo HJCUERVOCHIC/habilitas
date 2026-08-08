@@ -1,5 +1,7 @@
 'use client'
 
+import Link from 'next/link'
+
 import {
   getModuleStatus,
   isLessonAccessible,
@@ -13,10 +15,24 @@ interface LessonSidebarProps {
   progress: ProgressMap
   currentLessonId: string | null
   onSelect: (lessonId: string) => void
+  courseSlug: string
+  /**
+   * IDs de módulos que muestran la entrada "Practicar" al final del
+   * módulo (SPEC-PRACTICA-POR-MODULO §1.4).
+   */
+  moduleIdsWithPractice: string[]
 }
 
 /** Temario con desbloqueo progresivo (HABILITAS-ESPECIFICACION §5.4 RF-4.3/4.4). */
-export function LessonSidebar({ modules, progress, currentLessonId, onSelect }: LessonSidebarProps) {
+export function LessonSidebar({
+  modules,
+  progress,
+  currentLessonId,
+  onSelect,
+  courseSlug,
+  moduleIdsWithPractice,
+}: LessonSidebarProps) {
+  const practiceSet = new Set(moduleIdsWithPractice)
   return (
     <nav className="rounded-lg border border-border bg-white p-2" aria-label="Temario del curso">
       {modules.map((mod, index) => {
@@ -63,10 +79,42 @@ export function LessonSidebar({ modules, progress, currentLessonId, onSelect }: 
                 )
               })}
             </ul>
+            {practiceSet.has(mod.id) && (
+              <div className="mt-1 px-3 pb-2">
+                <Link
+                  href={`/curso/${courseSlug}/practica/${mod.id}`}
+                  className="flex w-full items-center gap-2 rounded-md border border-amber/40 bg-amber-pale/40 px-3 py-2 text-left text-sm text-ink-main hover:bg-amber-pale/70"
+                >
+                  <PracticeIcon />
+                  <span className="flex-1">Practicar</span>
+                  <span className="text-xs text-ink-soft">formativa</span>
+                </Link>
+              </div>
+            )}
           </div>
         )
       })}
     </nav>
+  )
+}
+
+function PracticeIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="text-amber"
+      aria-hidden="true"
+    >
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z" />
+    </svg>
   )
 }
 
