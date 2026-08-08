@@ -834,3 +834,140 @@ export async function grantAttemptUnlock(input: {
   revalidateAdminAll()
   return { ok: true, unlockId: data.id }
 }
+
+// ============================================================
+// Categorías (Bloque 6 — SPEC-ESTUDIANTES-CLASIFICACION §1.2)
+// ============================================================
+
+const CATEGORY_SLUG_RE = /^[a-z][a-z0-9-]*$/
+
+/**
+ * Normaliza un candidato a slug: minúsculas, quita acentos, espacios y
+ * caracteres no permitidos. Devuelve null si no queda nada útil.
+ */
+function normalizeCategorySlug(input: string): string | null {
+  const base = input
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 60)
+  if (!base || !CATEGORY_SLUG_RE.test(base)) return null
+  return base
+}
+
+export async function createCategory(input: {
+  label: string
+  slug?: string
+}): Promise<Result & { slug?: string }> {
+  if (!(await ensureAdmin())) return { ok: false, error: 'No autorizado.' }
+  const label = input.label.trim()
+  if (!label) return { ok: false, error: 'El nombre de la categoría es obligatorio.' }
+  const slug = normalizeCategorySlug(input.slug?.trim() || label)
+  if (!slug) {
+    return { ok: false, error: 'No se pudo generar un identificador válido a partir del nombre.' }
+  }
+  const admin = createAdminClient()
+  // Detectar colisión de slug antes del insert para dar un mensaje claro.
+  const { data: existing } = await admin
+    .from('categories')
+    .select('id')
+    .eq('slug', slug)
+    .maybeSingle()
+  if (existing) {
+    return {
+      ok: false,
+      error: `Ya existe una categoría con el identificador "${slug}". Elige otro nombre o cambia el slug.`,
+    }
+  }
+  // `order_index` al final: siguiente entero al máximo actual.
+  const { data: last } = await admin
+    .from('categories')
+    .select('order_index')
+    .order('order_index', { ascending: false })
+    .limit(1)
+    .maybeSingle<{ order_index: number }>()
+  const nextIndex = (last?.order_index ?? 0) + 1
+  const { error } = await admin
+    .from('categories')
+    .insert({ slug, label, order_index: nextIndex })
+  if (error) return { ok: false, error: error.message }
+  revalidateAdminAll()
+  return { ok: true, slug }
+}
+
+export async function updateCategory(
+  categoryId: string,
+  input: { label: string },
+): Promise<Result> {
+  if (!(await ensureAdmin())) return { ok: false, error: 'No autorizado.' }
+  const label = input.label.trim()
+  if (!label) return { ok: false, error: 'El nombre de la categoría es obligatorio.' }
+  const admin = createAdminClient()
+  const { error } = await admin
+    .from('categories')
+    .update({ label })
+    .eq('id', categoryId)
+  if (error) return { ok: false, error: error.message }
+  revalidateAdminAll()
+  return { ok: true }
+}
+
+export async function deleteCategory(categoryId: string): Promise<Result & { usedBy?: number }> {
+  if (!(await ensureAdmin())) return { ok: false, error: 'No autorizado.' }
+  const admin = createAdminClient()
+  const { data: category } = await admin
+    .from('categories')
+    .select('slug')
+    .eq('id', categoryId)
+    .maybeSingle<{ slug: string }>()
+  if (!category) return { ok: false, error: 'Categoría no encontrada.' }
+  // SPEC-ESTUDIANTES-CLASIFICACION §1.2 + §2 CA-10: rechazar si hay cursos
+  // usando la categoría, incluidos los archivados (siguen apuntándola).
+  const { count } = await admin
+    .from('courses')
+    .select('*', { count: 'exact', head: true })
+    .eq('category', category.slug)
+  const usedBy = count ?? 0
+  if (usedBy > 0) {
+    return {
+      ok: false,
+      error: `No se puede eliminar: la usa${usedBy === 1 ? '' : 'n'} ${usedBy} curso${usedBy === 1 ? '' : 's'}. Reasígnalos primero.`,
+      usedBy,
+    }
+  }
+  const { error } = await admin.from('categories').delete().eq('id', categoryId)
+  if (error) return { ok: false, error: error.message }
+  revalidateAdminAll()
+  return { ok: true }
+}
+
+/**
+ * Actualiza `duration_min` de una lección (SPEC-ESTUDIANTES-CLASIFICACION §1.6).
+ * Sujeto a la política de inmutabilidad del Bloque 5: bloqueado en cursos
+ * publicados. `null` o valor vacío borra el dato.
+ */
+export async function updateLessonDuration(
+  lessonId: string,
+  durationMin: number | null,
+): Promise<Result> {
+  if (!(await ensureAdmin())) return { ok: false, error: 'No autorizado.' }
+  if (durationMin != null) {
+    if (!Number.isInteger(durationMin) || durationMin < 0 || durationMin > 600) {
+      return { ok: false, error: 'La duración debe ser un entero entre 0 y 600 minutos.' }
+    }
+  }
+  const admin = createAdminClient()
+  const guard = await refuseIfPublished(admin, await courseIdForLesson(admin, lessonId))
+  if (guard) return guard
+  const { error } = await admin
+    .from('lessons')
+    .update({ duration_min: durationMin })
+    .eq('id', lessonId)
+  if (error) return { ok: false, error: error.message }
+  const slug = await slugForLessonId(admin, lessonId)
+  if (slug) revalidateLesson(slug, lessonId)
+  return { ok: true }
+}

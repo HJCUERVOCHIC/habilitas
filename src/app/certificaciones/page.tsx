@@ -15,13 +15,21 @@ export const metadata = {
 
 export default async function CertificacionesPage() {
   const supabase = createPublicClient()
-  const { data: courses } = await supabase
-    .from('courses')
-    .select('slug, title, description, category, duration_hours, difficulty')
-    .eq('published', true)
-    .order('title')
+  const [{ data: courses }, { data: categoriesData }] = await Promise.all([
+    supabase
+      .from('courses')
+      .select('slug, title, description, category, duration_hours, difficulty')
+      .eq('published', true)
+      .order('title'),
+    supabase
+      .from('categories')
+      .select('slug, label, order_index')
+      .order('order_index')
+      .order('label'),
+  ])
 
   const list = courses ?? []
+  const categories = (categoriesData ?? []).map((c) => ({ slug: c.slug, label: c.label }))
 
   return (
     <>
@@ -50,7 +58,7 @@ export default async function CertificacionesPage() {
                 </p>
               </div>
             ) : (
-              <CatalogClient courses={list} />
+              <CatalogClient courses={list} categories={categories} />
             )}
           </div>
 

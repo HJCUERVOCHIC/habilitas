@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation'
 
 import { createCourse, updateCourse, type CourseInput } from '@/app/admin/actions'
 import { Button } from '@/components/ui/Button'
-import { CATEGORIES, CATEGORY_LABELS } from '@/lib/categories'
 import { slugify } from '@/lib/slug'
 
 const FIELD =
@@ -13,29 +12,42 @@ const FIELD =
 
 const DIFFICULTIES = ['basico', 'intermedio', 'avanzado'] as const
 
+export interface CategoryOption {
+  slug: string
+  label: string
+}
+
 interface CourseFormProps {
   mode: 'create' | 'edit'
   courseId?: string
   initial?: CourseInput
+  /**
+   * Categorías administrables desde la BD (SPEC-ESTUDIANTES-CLASIFICACION §1.3).
+   * El primer elemento se usa como default en el modo `create`.
+   */
+  categories: CategoryOption[]
 }
 
-const EMPTY: CourseInput = {
-  slug: '',
-  title: '',
-  subtitle: '',
-  description: '',
-  category: 'soporte-vital',
-  difficulty: 'basico',
-  duration_hours: null,
-  cert_validity_days: 365,
-  pass_score: 70,
-  max_attempts: 3,
-  learning_objectives: [],
+function buildEmpty(defaultCategory: string): CourseInput {
+  return {
+    slug: '',
+    title: '',
+    subtitle: '',
+    description: '',
+    category: defaultCategory,
+    difficulty: 'basico',
+    duration_hours: null,
+    cert_validity_days: 365,
+    pass_score: 70,
+    max_attempts: 3,
+    learning_objectives: [],
+  }
 }
 
-export function CourseForm({ mode, courseId, initial }: CourseFormProps) {
+export function CourseForm({ mode, courseId, initial, categories }: CourseFormProps) {
   const router = useRouter()
-  const [form, setForm] = useState<CourseInput>(initial ?? EMPTY)
+  const defaultCategory = initial?.category || categories[0]?.slug || ''
+  const [form, setForm] = useState<CourseInput>(initial ?? buildEmpty(defaultCategory))
   const [objectivesText, setObjectivesText] = useState((initial?.learning_objectives ?? []).join('\n'))
   // En edición el slug no se toca (input disabled); en creación, mientras el
   // usuario no escriba manualmente en el campo, el slug refleja la
@@ -132,9 +144,9 @@ export function CourseForm({ mode, courseId, initial }: CourseFormProps) {
         <label className="block text-sm">
           <span className="mb-1 block font-medium text-ink-main">Categoría</span>
           <select className={FIELD} value={form.category} onChange={(e) => set('category', e.target.value)}>
-            {CATEGORIES.map((c) => (
-              <option key={c} value={c}>
-                {CATEGORY_LABELS[c]}
+            {categories.map((c) => (
+              <option key={c.slug} value={c.slug}>
+                {c.label}
               </option>
             ))}
           </select>

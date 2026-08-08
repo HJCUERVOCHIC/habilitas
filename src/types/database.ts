@@ -139,6 +139,30 @@ export type Database = {
         }
         Relationships: []
       }
+      categories: {
+        Row: {
+          id: string
+          slug: string
+          label: string
+          order_index: number
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          slug: string
+          label: string
+          order_index?: number
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          slug?: string
+          label?: string
+          order_index?: number
+          created_at?: string
+        }
+        Relationships: []
+      }
       modules: {
         Row: {
           id: string

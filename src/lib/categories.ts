@@ -70,3 +70,31 @@ export const DIFFICULTY_LEVEL: Record<string, number> = {
 export function isCategory(value: string): value is Category {
   return (CATEGORIES as readonly string[]).includes(value)
 }
+
+/**
+ * Devuelve un label legible para cualquier slug de categoría, incluidos
+ * los que se crean después del arranque (SPEC-ESTUDIANTES-CLASIFICACION §1.2).
+ * Prefiere el label del mapa estático (que puede haber sido actualizado desde
+ * la BD antes de renderizar); si no encuentra, hace un `prettify` mínimo del
+ * slug. Nunca lanza y nunca deja el slug crudo al usuario.
+ */
+export function getCategoryLabelStatic(slug: string): string {
+  if (isCategory(slug)) return CATEGORY_LABELS[slug]
+  return prettifySlug(slug)
+}
+
+function prettifySlug(slug: string): string {
+  const cleaned = slug.replace(/-/g, ' ').trim()
+  if (!cleaned) return slug
+  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1)
+}
+
+/**
+ * Clase Tailwind de fondo para un slug arbitrario. Cae a un tono neutro
+ * cuando el slug no está en el mapa estático (categorías creadas después
+ * del arranque no tienen color asignado).
+ */
+export function getCategoryBgClass(slug: string): string {
+  if (isCategory(slug)) return CATEGORY_BG_CLASS[slug]
+  return 'bg-charcoal'
+}

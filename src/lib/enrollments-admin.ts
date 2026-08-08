@@ -544,6 +544,117 @@ export async function getUserAttempts(
 }
 
 /**
+ * Fila del índice de estudiantes (`/admin/estudiantes`). Todos los
+ * agregados vienen resueltos server-side con un número FIJO de queries al
+ * conjunto de estudiantes (SPEC-ESTUDIANTES-CLASIFICACION §1.1 CA-6).
+ */
+export interface StudentIndexRow {
+  userId: string
+  fullName: string
+  email: string | null
+  profession: string | null
+  city: string | null
+  enrollmentsCount: number
+  completedCoursesCount: number
+  validCertificatesCount: number
+  lastActivityAt: string | null
+}
+
+/**
+ * Índice agregado de estudiantes (SPEC-ESTUDIANTES-CLASIFICACION §1.1). Se
+ * resuelve con 5 queries a Supabase + 1 llamada al Admin Auth para emails,
+ * todas O(1) al número de estudiantes. Los agregados se computan client-side
+ * sobre `Map<userId, ...>` para no incurrir en N+1.
+ */
+export async function getStudentsIndex(
+  admin: SupabaseAdmin,
+): Promise<StudentIndexRow[]> {
+  // 1) Perfiles con rol estudiante.
+  const { data: profiles } = await admin
+    .from('users')
+    .select('id, full_name, profession, city, created_at')
+    .eq('role', 'student')
+    .order('created_at', { ascending: false })
+  const list = profiles ?? []
+  if (list.length === 0) return []
+  const userIds = list.map((p) => p.id)
+
+  // 2) Correos vía Admin Auth (paginado a 1000 en el helper existente).
+  const emails = await loadEmailsForUsers(admin, userIds)
+
+  // 3) Inscripciones (una fila por curso al que se inscribió el usuario).
+  const { data: enrolls } = await admin
+    .from('enrollments')
+    .select('user_id, enrolled_at')
+    .in('user_id', userIds)
+  const enrollmentsByUser = new Map<string, number>()
+  const enrollmentLastByUser = new Map<string, string>()
+  for (const e of enrolls ?? []) {
+    enrollmentsByUser.set(e.user_id, (enrollmentsByUser.get(e.user_id) ?? 0) + 1)
+    const prev = enrollmentLastByUser.get(e.user_id)
+    if (!prev || e.enrolled_at > prev) enrollmentLastByUser.set(e.user_id, e.enrolled_at)
+  }
+
+  // 4) Vista `course_progress` (security_invoker=on) para cursos al 100%.
+  const { data: progressRows } = await admin
+    .from('course_progress')
+    .select('user_id, progress_pct, lessons_total')
+    .in('user_id', userIds)
+  const completedByUser = new Map<string, number>()
+  for (const p of progressRows ?? []) {
+    // Cursos con lecciones (`lessons_total > 0`) que llegan al 100%.
+    if ((p.lessons_total ?? 0) > 0 && p.progress_pct === 100 && p.user_id) {
+      completedByUser.set(p.user_id, (completedByUser.get(p.user_id) ?? 0) + 1)
+    }
+  }
+
+  // 5) Constancias vigentes: `status = 'valid'` y no expiradas.
+  const nowIso = new Date().toISOString()
+  const { data: certs } = await admin
+    .from('certificates')
+    .select('user_id, expires_at, status')
+    .in('user_id', userIds)
+    .eq('status', 'valid')
+    .gt('expires_at', nowIso)
+  const validCertsByUser = new Map<string, number>()
+  for (const c of certs ?? []) {
+    validCertsByUser.set(c.user_id, (validCertsByUser.get(c.user_id) ?? 0) + 1)
+  }
+
+  // 6) Última actividad: max(lesson_progress.updated_at, eval_attempts.started_at,
+  //    enrollments.enrolled_at) por usuario. Se computa comparando ISO strings.
+  const activityByUser = new Map<string, string>(enrollmentLastByUser)
+  const { data: progressActivity } = await admin
+    .from('lesson_progress')
+    .select('user_id, updated_at')
+    .in('user_id', userIds)
+  for (const p of progressActivity ?? []) {
+    const prev = activityByUser.get(p.user_id)
+    if (!prev || p.updated_at > prev) activityByUser.set(p.user_id, p.updated_at)
+  }
+  const { data: attemptActivity } = await admin
+    .from('eval_attempts')
+    .select('user_id, started_at')
+    .in('user_id', userIds)
+  for (const a of attemptActivity ?? []) {
+    const prev = activityByUser.get(a.user_id)
+    if (!prev || a.started_at > prev) activityByUser.set(a.user_id, a.started_at)
+  }
+
+  return list.map((p) => ({
+    userId: p.id,
+    fullName: p.full_name,
+    email: emails.get(p.id) ?? null,
+    profession: p.profession,
+    city: p.city,
+    enrollmentsCount: enrollmentsByUser.get(p.id) ?? 0,
+    completedCoursesCount: completedByUser.get(p.id) ?? 0,
+    validCertificatesCount: validCertsByUser.get(p.id) ?? 0,
+    lastActivityAt: activityByUser.get(p.id) ?? null,
+  }))
+}
+
+/**
  * Estado del bloqueo (ventana + unlocks) del estudiante para una
  * evaluación. Se usa en la ficha para pintar el botón "Conceder intento".
  */

@@ -3,22 +3,48 @@
 import { useMemo, useState } from 'react'
 
 import { CertCard, type CatalogCourse } from '@/components/cert/CertCard'
-import { CATEGORIES, CATEGORY_LABELS, type Category } from '@/lib/categories'
+import { getCategoryLabelStatic } from '@/lib/categories'
 import { cn } from '@/lib/utils'
 
-type Filter = Category | 'todas'
+type Filter = string | 'todas'
+
+interface CatalogClientProps {
+  courses: CatalogCourse[]
+  /**
+   * Categorías administrables desde la BD, en orden de presentación
+   * (SPEC-ESTUDIANTES-CLASIFICACION §1.3). Si viene vacío, se cae al mapa
+   * estático — el catálogo sigue mostrando las etiquetas conocidas aunque
+   * la migración de categorías no se haya aplicado todavía.
+   */
+  categories?: { slug: string; label: string }[]
+}
 
 /**
  * Catálogo con filtro client-side por categoría (HABILITAS-ESPECIFICACION
  * §5.2 RF-2.2/RF-2.3). El filtro opera sobre el conjunto ya cargado.
  */
-export function CatalogClient({ courses }: { courses: CatalogCourse[] }) {
+export function CatalogClient({ courses, categories = [] }: CatalogClientProps) {
   const [selected, setSelected] = useState<Filter>('todas')
 
-  const presentCategories = useMemo(
-    () => CATEGORIES.filter((cat) => courses.some((course) => course.category === cat)),
-    [courses],
-  )
+  const labelBySlug = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const c of categories) map.set(c.slug, c.label)
+    return map
+  }, [categories])
+
+  const presentCategories = useMemo(() => {
+    const orderedSlugs = categories.length > 0 ? categories.map((c) => c.slug) : []
+    const inUse = new Set(courses.map((c) => c.category))
+    const ordered = orderedSlugs.filter((s) => inUse.has(s))
+    // Slugs que aparecen en cursos pero no en la lista administrada: los
+    // agregamos al final para no perderlos.
+    inUse.forEach((slug) => {
+      if (!ordered.includes(slug)) ordered.push(slug)
+    })
+    return ordered
+  }, [categories, courses])
+
+  const labelFor = (slug: string) => labelBySlug.get(slug) ?? getCategoryLabelStatic(slug)
 
   const filtered =
     selected === 'todas' ? courses : courses.filter((course) => course.category === selected)
@@ -31,7 +57,7 @@ export function CatalogClient({ courses }: { courses: CatalogCourse[] }) {
         </FilterButton>
         {presentCategories.map((cat) => (
           <FilterButton key={cat} active={selected === cat} onClick={() => setSelected(cat)}>
-            {CATEGORY_LABELS[cat]}
+            {labelFor(cat)}
           </FilterButton>
         ))}
       </div>

@@ -12,6 +12,7 @@ import {
   reorderLesson,
   reorderModule,
   updateLesson,
+  updateLessonDuration,
   updateModule,
 } from '@/app/admin/actions'
 import { Button } from '@/components/ui/Button'
@@ -288,6 +289,9 @@ function LessonRow({
   const [editing, setEditing] = useState(false)
   const [title, setTitle] = useState(lesson.title)
   const [contentType, setContentType] = useState(lesson.content_type)
+  const [durationText, setDurationText] = useState<string>(
+    lesson.duration_min != null ? String(lesson.duration_min) : '',
+  )
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
@@ -296,16 +300,40 @@ function LessonRow({
       setError('El título es obligatorio.')
       return
     }
+    // Validación mínima del input de duración antes de disparar el action.
+    const trimmed = durationText.trim()
+    let durationMin: number | null = null
+    if (trimmed !== '') {
+      const parsed = Number(trimmed)
+      if (!Number.isInteger(parsed) || parsed < 0 || parsed > 600) {
+        setError('Duración: entero entre 0 y 600 minutos, o vacío.')
+        return
+      }
+      durationMin = parsed
+    }
     setBusy(true)
     setError('')
     const res = await updateLesson(lesson.id, { title, content_type: contentType })
-    setBusy(false)
-    if (res.ok) {
-      setEditing(false)
-      onMutated()
-    } else {
+    if (!res.ok) {
+      setBusy(false)
       setError(res.error ?? 'No se pudo guardar.')
+      return
     }
+    // `duration_min` no forma parte de `updateLesson` (SPEC-CURSOS-ESTRUCTURA
+    // §1). Se persiste con un action dedicado añadido en Bloque 6 (§1.6).
+    // Solo se envía si cambió respecto al valor guardado — evita revalidar
+    // rutas por gusto cuando el admin solo tocó título o tipo.
+    if (durationMin !== (lesson.duration_min ?? null)) {
+      const dres = await updateLessonDuration(lesson.id, durationMin)
+      if (!dres.ok) {
+        setBusy(false)
+        setError(dres.error ?? 'No se pudo guardar la duración.')
+        return
+      }
+    }
+    setBusy(false)
+    setEditing(false)
+    onMutated()
   }
 
   async function move(direction: 'up' | 'down') {
@@ -347,6 +375,21 @@ function LessonRow({
               </option>
             ))}
           </select>
+          <label className="flex items-center gap-1 text-xs text-ink-soft">
+            <input
+              className={`${FIELD} w-20`}
+              type="number"
+              min={0}
+              max={600}
+              step={1}
+              placeholder="min"
+              value={durationText}
+              onChange={(e) => setDurationText(e.target.value)}
+              disabled={locked}
+              aria-label="Duración en minutos"
+            />
+            <span>min</span>
+          </label>
           <Button variant="primary" size="sm" onClick={save} disabled={busy || locked}>
             Guardar
           </Button>
@@ -357,6 +400,9 @@ function LessonRow({
               setEditing(false)
               setTitle(lesson.title)
               setContentType(lesson.content_type)
+              setDurationText(
+                lesson.duration_min != null ? String(lesson.duration_min) : '',
+              )
               setError('')
             }}
           >

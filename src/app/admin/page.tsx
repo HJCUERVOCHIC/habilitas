@@ -20,8 +20,11 @@ export default async function AdminDashboard() {
     <div>
       <div className="flex items-center justify-between">
         <h1 className="font-display text-display-md text-charcoal">Panel</h1>
+        {/* SPEC-ESTUDIANTES-CLASIFICACION §1.7: la entrada del Panel lleva al
+            listado, no al formulario. El botón "Nuevo curso" dentro del
+            listado sigue abriendo el formulario. */}
         <Button asChild variant="primary">
-          <Link href="/admin/cursos/nuevo">Nuevo curso</Link>
+          <Link href="/admin/cursos">Nuevo curso</Link>
         </Button>
       </div>
 

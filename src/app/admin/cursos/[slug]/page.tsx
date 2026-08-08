@@ -5,6 +5,7 @@ import { notFound } from 'next/navigation'
 import { ArchiveCourseButton } from '@/components/admin/ArchiveCourseButton'
 import { CourseForm } from '@/components/admin/CourseForm'
 import { PublishPanel } from '@/components/admin/PublishPanel'
+import { listCategories } from '@/lib/categories-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
 import type { CourseInput } from '@/app/admin/actions'
 import { countActiveEnrollments } from '@/lib/enrollments-admin'
@@ -60,6 +61,10 @@ export default async function EditarCursoPage({ params }: { params: { slug: stri
     .select('*', { count: 'exact', head: true })
     .eq('course_id', course.id)
   const activeCount = await countActiveEnrollments(admin, course.id)
+  const categoryOptions = (await listCategories(admin)).map((c) => ({
+    slug: c.slug,
+    label: c.label,
+  }))
 
   const { data: evaluation } = await admin
     .from('evaluations')
@@ -122,7 +127,12 @@ export default async function EditarCursoPage({ params }: { params: { slug: stri
       </div>
 
       <div className="mt-6">
-        <CourseForm mode="edit" courseId={course.id} initial={initial} />
+        <CourseForm
+          mode="edit"
+          courseId={course.id}
+          initial={initial}
+          categories={categoryOptions}
+        />
       </div>
 
       {!course.published && (
