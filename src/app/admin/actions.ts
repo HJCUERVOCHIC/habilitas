@@ -1,13 +1,20 @@
 'use server'
 
-import { revalidatePath } from 'next/cache'
-
+import {
+  countActiveEnrollments,
+  courseIdForEvaluation,
+  courseIdForLesson,
+  courseIdForModule,
+  courseIdForQuestion,
+} from '@/lib/enrollments-admin'
 import { getPublishChecklist } from '@/lib/publish-checklist'
 import { getAdminUser } from '@/lib/require-admin'
 import {
+  revalidateAdminAll,
   revalidateCourse,
   revalidateLesson,
   revalidateStructure,
+  revalidateVerify,
 } from '@/lib/revalidate-admin'
 import { slugify } from '@/lib/slug'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -111,6 +118,52 @@ async function nextUniqueSlug(
 
 type Result = { ok: boolean; error?: string }
 
+/**
+ * Resultado extendido para `setPublished(false)` y `archiveCourse`
+ * (SPEC-INSCRIPCIONES-SEGUIMIENTO §1.3 v1.2). Son las únicas operaciones
+ * que sobreviven al cambio de política: la primera avisa al despublicar,
+ * la segunda confirma al archivar.
+ */
+type GuardedResult = Result & {
+  requiresConfirmation?: boolean
+  activeCount?: number
+}
+
+/**
+ * Bloqueo de contenido para cursos publicados
+ * (SPEC-INSCRIPCIONES-SEGUIMIENTO §1.3 v1.2).
+ *
+ * Regla: un curso publicado no admite modificaciones de contenido —
+ * módulos, lecciones, texto, medios, banco de preguntas o config de
+ * evaluación. La revisión de contenido es responsabilidad previa a
+ * publicar. Para editar hay que despublicar primero.
+ *
+ * Se resuelve leyendo `courses.published` por id. Si `courseId` no se
+ * puede resolver desde la id intermedia (módulo/lección/pregunta huérfana),
+ * no bloqueamos: es defensivo y evita convertir fallos de lookup en
+ * rechazos silenciosos que confundan al admin. En la práctica los actions
+ * también validan la existencia del recurso más adelante.
+ */
+async function refuseIfPublished(
+  admin: ReturnType<typeof createAdminClient>,
+  courseId: string | null,
+): Promise<Result | null> {
+  if (!courseId) return null
+  const { data } = await admin
+    .from('courses')
+    .select('published')
+    .eq('id', courseId)
+    .maybeSingle<{ published: boolean }>()
+  if (data?.published) {
+    return {
+      ok: false,
+      error:
+        'El curso está publicado. Para modificar su contenido, despublícalo primero desde el panel del curso.',
+    }
+  }
+  return null
+}
+
 export interface CourseInput {
   slug: string
   title: string
@@ -187,12 +240,16 @@ export async function updateCourse(courseId: string, input: CourseInput): Promis
 }
 
 /**
- * Soft-delete del curso (SPEC-CURSOS-ESTRUCTURA §1). Solo permitido si el
- * curso es borrador y no tiene inscripciones ni constancias emitidas
- * (preserva el acceso de cualquier persona ya inscrita y la integridad de
- * constancias). Reversible vía restoreCourse.
+ * Soft-delete del curso (SPEC-CURSOS-ESTRUCTURA §1 +
+ * SPEC-INSCRIPCIONES-SEGUIMIENTO §1.3 CA-10). Requiere: borrador y sin
+ * constancias emitidas. Si además hay inscritos activos, pide confirmación
+ * explícita (`opts.confirmed=true`) para no archivar por accidente un curso
+ * que gente está cursando. Reversible vía restoreCourse.
  */
-export async function archiveCourse(courseId: string): Promise<Result> {
+export async function archiveCourse(
+  courseId: string,
+  opts: { confirmed?: boolean } = {},
+): Promise<GuardedResult> {
   if (!(await ensureAdmin())) return { ok: false, error: 'No autorizado.' }
   const admin = createAdminClient()
   const { data: course } = await admin
@@ -205,22 +262,16 @@ export async function archiveCourse(courseId: string): Promise<Result> {
   if (course.published) {
     return { ok: false, error: 'Despublica el curso antes de archivarlo.' }
   }
-  const { count: enrollments } = await admin
-    .from('enrollments')
-    .select('*', { count: 'exact', head: true })
-    .eq('course_id', courseId)
-  if (enrollments && enrollments > 0) {
-    return {
-      ok: false,
-      error: 'Hay personas inscritas; archivar dejaría esas inscripciones sin acceso.',
-    }
-  }
   const { count: certs } = await admin
     .from('certificates')
     .select('*', { count: 'exact', head: true })
     .eq('course_id', courseId)
   if (certs && certs > 0) {
     return { ok: false, error: 'El curso tiene constancias emitidas; no se puede archivar.' }
+  }
+  if (!opts.confirmed) {
+    const active = await countActiveEnrollments(admin, courseId)
+    if (active > 0) return { ok: false, requiresConfirmation: true, activeCount: active }
   }
   const now = new Date().toISOString()
   const { error } = await admin
@@ -230,7 +281,7 @@ export async function archiveCourse(courseId: string): Promise<Result> {
   if (error) return { ok: false, error: error.message }
   const slug = await slugForCourseId(admin, courseId)
   if (slug) revalidateCourse(slug)
-  else revalidatePath('/admin/cursos')
+  else revalidateAdminAll()
   return { ok: true }
 }
 
@@ -245,16 +296,22 @@ export async function restoreCourse(courseId: string): Promise<Result> {
   if (error) return { ok: false, error: error.message }
   const slug = await slugForCourseId(admin, courseId)
   if (slug) revalidateCourse(slug)
-  else revalidatePath('/admin/cursos')
+  else revalidateAdminAll()
   return { ok: true }
 }
 
-export async function setPublished(courseId: string, published: boolean): Promise<Result> {
+export async function setPublished(
+  courseId: string,
+  published: boolean,
+  opts: { confirmed?: boolean } = {},
+): Promise<GuardedResult> {
   if (!(await ensureAdmin())) return { ok: false, error: 'No autorizado.' }
   const admin = createAdminClient()
 
   // SPEC-PUBLICACION-CONSTANCIAS §2 CA-2: publicar exige checklist completo.
-  // Despublicar es libre (reversible y solo retira del catálogo).
+  // Despublicar retira del catálogo pero no borra datos; SPEC-INSCRIPCIONES-
+  // SEGUIMIENTO §1.3 (G5): con inscritos activos pide confirmación para no
+  // reproducir el incidente del 07-ago.
   if (published) {
     const checklist = await getPublishChecklist(courseId)
     if (!checklist.canPublish) {
@@ -267,6 +324,9 @@ export async function setPublished(courseId: string, published: boolean): Promis
         error: `El curso aún no cumple los requisitos para publicarse (${missing}). Revisa el checklist en el detalle del curso.`,
       }
     }
+  } else if (!opts.confirmed) {
+    const active = await countActiveEnrollments(admin, courseId)
+    if (active > 0) return { ok: false, requiresConfirmation: true, activeCount: active }
   }
 
   const now = new Date().toISOString()
@@ -281,7 +341,7 @@ export async function setPublished(courseId: string, published: boolean): Promis
   if (error) return { ok: false, error: error.message }
   const slug = await slugForCourseId(admin, courseId)
   if (slug) revalidateCourse(slug)
-  else revalidatePath('/admin/cursos')
+  else revalidateAdminAll()
   return { ok: true }
 }
 
@@ -289,6 +349,8 @@ export async function createModule(courseId: string, title: string): Promise<Res
   if (!(await ensureAdmin())) return { ok: false, error: 'No autorizado.' }
   if (!title.trim()) return { ok: false, error: 'El título es obligatorio.' }
   const admin = createAdminClient()
+  const guard = await refuseIfPublished(admin, courseId)
+  if (guard) return guard
   const { count } = await admin
     .from('modules')
     .select('*', { count: 'exact', head: true })
@@ -306,6 +368,8 @@ export async function updateModule(moduleId: string, title: string): Promise<Res
   if (!(await ensureAdmin())) return { ok: false, error: 'No autorizado.' }
   if (!title.trim()) return { ok: false, error: 'El título es obligatorio.' }
   const admin = createAdminClient()
+  const guard = await refuseIfPublished(admin, await courseIdForModule(admin, moduleId))
+  if (guard) return guard
   const { error } = await admin
     .from('modules')
     .update({ title: title.trim() })
@@ -320,6 +384,10 @@ export async function updateModule(moduleId: string, title: string): Promise<Res
  * Reordena un módulo intercambiando su `order_index` con el vecino en la
  * dirección indicada. No hay constraint único en (course_id, order_index),
  * por lo que el swap en dos updates funciona sin colisión.
+ *
+ * SPEC-INSCRIPCIONES-SEGUIMIENTO §1.3 v1.2: bloqueado mientras el curso
+ * esté publicado. El riesgo residual para estudiantes existentes se elimina
+ * en §1.7 (una lección ya completada permanece accesible).
  */
 export async function reorderModule(
   moduleId: string,
@@ -333,6 +401,9 @@ export async function reorderModule(
     .eq('id', moduleId)
     .maybeSingle()
   if (!target) return { ok: false, error: 'Módulo no encontrado.' }
+
+  const guard = await refuseIfPublished(admin, target.course_id)
+  if (guard) return guard
 
   const neighborQuery = admin
     .from('modules')
@@ -371,6 +442,9 @@ export async function reorderModule(
 export async function deleteModule(moduleId: string): Promise<Result> {
   if (!(await ensureAdmin())) return { ok: false, error: 'No autorizado.' }
   const admin = createAdminClient()
+  const courseId = await courseIdForModule(admin, moduleId)
+  const guard = await refuseIfPublished(admin, courseId)
+  if (guard) return guard
   // Resolvemos slug antes del delete: después el join sería imposible.
   const slug = await slugForModuleId(admin, moduleId)
   const { error } = await admin.from('modules').delete().eq('id', moduleId)
@@ -391,6 +465,8 @@ export async function createLesson(moduleId: string, input: LessonInput): Promis
   if (!(await ensureAdmin())) return { ok: false, error: 'No autorizado.' }
   if (!input.title.trim()) return { ok: false, error: 'El título es obligatorio.' }
   const admin = createAdminClient()
+  const guard = await refuseIfPublished(admin, await courseIdForModule(admin, moduleId))
+  if (guard) return guard
   const { count } = await admin
     .from('lessons')
     .select('*', { count: 'exact', head: true })
@@ -414,6 +490,9 @@ export async function createLesson(moduleId: string, input: LessonInput): Promis
  * Edita los campos de estructura de una lección (título + tipo).
  * Los campos de contenido (content_r2_key, transcript, duration_min) los maneja
  * el Bloque 2, no este action.
+ *
+ * SPEC-INSCRIPCIONES-SEGUIMIENTO §1.3 v1.2: bloqueado si el curso está
+ * publicado, independientemente del campo modificado.
  */
 export async function updateLesson(
   lessonId: string,
@@ -422,6 +501,10 @@ export async function updateLesson(
   if (!(await ensureAdmin())) return { ok: false, error: 'No autorizado.' }
   if (!input.title.trim()) return { ok: false, error: 'El título es obligatorio.' }
   const admin = createAdminClient()
+
+  const guard = await refuseIfPublished(admin, await courseIdForLesson(admin, lessonId))
+  if (guard) return guard
+
   const { error } = await admin
     .from('lessons')
     .update({ title: input.title.trim(), content_type: input.content_type })
@@ -432,6 +515,12 @@ export async function updateLesson(
   return { ok: true }
 }
 
+/**
+ * Reordena una lección dentro de su módulo.
+ * SPEC-INSCRIPCIONES-SEGUIMIENTO §1.3 v1.2: bloqueado si el curso está
+ * publicado. La irreversibilidad del desbloqueo progresivo (§1.7) cubre
+ * a los estudiantes ya avanzados una vez el curso se despublica y edita.
+ */
 export async function reorderLesson(
   lessonId: string,
   direction: 'up' | 'down',
@@ -444,6 +533,9 @@ export async function reorderLesson(
     .eq('id', lessonId)
     .maybeSingle()
   if (!target) return { ok: false, error: 'Lección no encontrada.' }
+
+  const guard = await refuseIfPublished(admin, await courseIdForLesson(admin, lessonId))
+  if (guard) return guard
 
   const neighborQuery = admin
     .from('lessons')
@@ -482,6 +574,9 @@ export async function reorderLesson(
 export async function deleteLesson(lessonId: string): Promise<Result> {
   if (!(await ensureAdmin())) return { ok: false, error: 'No autorizado.' }
   const admin = createAdminClient()
+  const courseId = await courseIdForLesson(admin, lessonId)
+  const guard = await refuseIfPublished(admin, courseId)
+  if (guard) return guard
   // Resolvemos slug antes del delete: después el join sería imposible.
   const slug = await slugForLessonId(admin, lessonId)
   const { error } = await admin.from('lessons').delete().eq('id', lessonId)
@@ -526,6 +621,8 @@ export async function createQuestion(
     return { ok: false, error: 'La opción correcta no es válida.' }
   }
   const admin = createAdminClient()
+  const guard = await refuseIfPublished(admin, await courseIdForEvaluation(admin, evaluationId))
+  if (guard) return guard
   const { count } = await admin
     .from('questions')
     .select('*', { count: 'exact', head: true })
@@ -555,6 +652,8 @@ export async function updateQuestion(
     return { ok: false, error: 'La opción correcta no es válida.' }
   }
   const admin = createAdminClient()
+  const guard = await refuseIfPublished(admin, await courseIdForQuestion(admin, questionId))
+  if (guard) return guard
   const { error } = await admin
     .from('questions')
     .update({
@@ -581,6 +680,8 @@ export async function reorderQuestion(
     .eq('id', questionId)
     .maybeSingle()
   if (!target) return { ok: false, error: 'Pregunta no encontrada.' }
+  const guard = await refuseIfPublished(admin, await courseIdForEvaluation(admin, target.evaluation_id))
+  if (guard) return guard
 
   const neighborQuery = admin
     .from('questions')
@@ -617,6 +718,8 @@ export async function reorderQuestion(
 export async function deleteQuestion(questionId: string): Promise<Result> {
   if (!(await ensureAdmin())) return { ok: false, error: 'No autorizado.' }
   const admin = createAdminClient()
+  const guard = await refuseIfPublished(admin, await courseIdForQuestion(admin, questionId))
+  if (guard) return guard
   const { error } = await admin.from('questions').delete().eq('id', questionId)
   return error ? { ok: false, error: error.message } : { ok: true }
 }
@@ -642,12 +745,29 @@ export async function setEvaluationConfig(
     return { ok: false, error: 'La nota mínima debe ser un entero entre 0 y 100.' }
   }
   const admin = createAdminClient()
+  const guard = await refuseIfPublished(admin, courseId)
+  if (guard) return guard
   const { data: evaluation } = await admin
     .from('evaluations')
     .select('id')
     .eq('course_id', courseId)
     .maybeSingle()
   if (!evaluation) return { ok: false, error: 'El curso aún no tiene evaluación.' }
+
+  // SPEC-INSCRIPCIONES-SEGUIMIENTO §1.8 CA-26: rechazar N > banco disponible
+  // con un mensaje claro. Sin esta cota el sorteo terminaría devolviendo el
+  // banco entero barajado, lo cual no es lo que el admin configuró.
+  const { count: bankSize } = await admin
+    .from('questions')
+    .select('*', { count: 'exact', head: true })
+    .eq('evaluation_id', evaluation.id)
+  const bank = bankSize ?? 0
+  if (input.questions_per_attempt > bank) {
+    return {
+      ok: false,
+      error: `Preguntas por intento (${input.questions_per_attempt}) supera el banco disponible (${bank}). Añade más preguntas o reduce el número.`,
+    }
+  }
 
   const evalUpdate = await admin
     .from('evaluations')
@@ -672,7 +792,45 @@ export async function revokeCertificate(certId: string, reason: string): Promise
     .update({ status: 'revoked', revoked_at: new Date().toISOString(), revoke_reason: reason.trim() })
     .eq('cert_id', certId)
   if (error) return { ok: false, error: error.message }
-  revalidatePath('/admin/certificados')
-  revalidatePath(`/verificar/${certId}`)
+  revalidateAdminAll()
+  // Patrón dinámico: las URLs de verificación reales usan `verification_id`
+  // (UUID) desde la migración 0008; el `cert_id` legible (HAB-YYYY-NNNN)
+  // solo aplica a constancias legacy. Invalidar el patrón cubre ambas.
+  revalidateVerify()
   return { ok: true }
+}
+
+/**
+ * Desbloqueo manual de un estudiante bloqueado (F8;
+ * SPEC-INSCRIPCIONES-SEGUIMIENTO §1.4). Inserta una fila en `attempt_unlocks`
+ * que concede **un intento adicional** dentro de la ventana móvil. No toca
+ * `eval_attempts` — el historial se preserva; `computeAttemptWindow` cuenta
+ * los unlocks y agranda el techo efectivo.
+ *
+ * Registra `granted_by` (el admin actual) y opcionalmente una nota, lo que
+ * satisface CA-17 aunque la auditoría general (área L) no exista todavía.
+ */
+export async function grantAttemptUnlock(input: {
+  userId: string
+  evaluationId: string
+  note?: string
+}): Promise<Result & { unlockId?: string }> {
+  const currentAdmin = await getAdminUser()
+  if (!currentAdmin) return { ok: false, error: 'No autorizado.' }
+  const admin = createAdminClient()
+  const { data, error } = await admin
+    .from('attempt_unlocks')
+    .insert({
+      user_id: input.userId,
+      evaluation_id: input.evaluationId,
+      granted_by: currentAdmin.id,
+      note: input.note?.trim() || null,
+    })
+    .select('id')
+    .single()
+  if (error || !data) return { ok: false, error: error?.message ?? 'No se pudo desbloquear.' }
+  // `revalidateAdminAll()` cubre listado, detalle, ficha del estudiante y
+  // registro de constancias sin enumerar rutas hijas literales.
+  revalidateAdminAll()
+  return { ok: true, unlockId: data.id }
 }

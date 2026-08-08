@@ -2,8 +2,59 @@
 
 import { isLessonAccessible, isVideoCompletionValid } from '@/lib/course-progress'
 import { getSignedLessonUrl } from '@/lib/r2'
+import { revalidateStudentActivityForAdmin } from '@/lib/revalidate-admin'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import type { ModuleWithLessons, ProgressMap } from '@/types/course'
+
+/**
+ * Resuelve el slug del curso al que pertenece una lección. Se usa para
+ * invalidar rutas de admin cuando el estudiante marca progreso o envía un
+ * intento (regla de invalidación cruzada, CLAUDE.md).
+ *
+ * Selects de columnas directas encadenados (no embeds de PostgREST) y
+ * logs en los caminos de fallo para no dejar silenciada una invalidación
+ * omitida.
+ */
+async function slugForLessonFromStudent(lessonId: string): Promise<string | null> {
+  const admin = createAdminClient()
+  const { data: lesson, error: lessonErr } = await admin
+    .from('lessons')
+    .select('module_id')
+    .eq('id', lessonId)
+    .maybeSingle<{ module_id: string }>()
+  if (lessonErr) {
+    console.error('[student→admin] slugForLessonFromStudent(lesson):', lessonErr.message, lessonId)
+    return null
+  }
+  if (!lesson?.module_id) {
+    console.warn('[student→admin] slugForLessonFromStudent sin module_id:', lessonId)
+    return null
+  }
+  const { data: module_, error: modErr } = await admin
+    .from('modules')
+    .select('course_id')
+    .eq('id', lesson.module_id)
+    .maybeSingle<{ course_id: string }>()
+  if (modErr) {
+    console.error('[student→admin] slugForLessonFromStudent(module):', modErr.message, lesson.module_id)
+    return null
+  }
+  if (!module_?.course_id) {
+    console.warn('[student→admin] slugForLessonFromStudent sin course_id:', lesson.module_id)
+    return null
+  }
+  const { data: course, error: courseErr } = await admin
+    .from('courses')
+    .select('slug')
+    .eq('id', module_.course_id)
+    .maybeSingle<{ slug: string }>()
+  if (courseErr) {
+    console.error('[student→admin] slugForLessonFromStudent(course):', courseErr.message, module_.course_id)
+    return null
+  }
+  return course?.slug ?? null
+}
 
 export type LessonContent =
   | { ok: true; kind: 'text'; markdown: string }
@@ -139,7 +190,12 @@ export async function markLessonComplete(lessonId: string): Promise<{ ok: boolea
     },
     { onConflict: 'user_id,lesson_id' },
   )
-  return { ok: !error }
+  if (error) return { ok: false }
+  // Invalidación cruzada: el progreso aparece en el listado de inscritos y
+  // en la ficha del estudiante en admin (regla CLAUDE.md).
+  const slug = await slugForLessonFromStudent(lessonId)
+  if (slug) revalidateStudentActivityForAdmin(slug, ctx.userId)
+  return { ok: true }
 }
 
 /**
@@ -180,5 +236,12 @@ export async function saveVideoProgress(
   const { error } = await ctx.supabase
     .from('lesson_progress')
     .upsert(payload, { onConflict: 'user_id,lesson_id' })
-  return { ok: !error }
+  if (error) return { ok: false }
+  // Invalidación cruzada solo si el progreso subió a `completed`: el
+  // guardado de `last_position` a solas no cambia lo que ve el admin.
+  if (acceptCompleted) {
+    const slug = await slugForLessonFromStudent(lessonId)
+    if (slug) revalidateStudentActivityForAdmin(slug, ctx.userId)
+  }
+  return { ok: true }
 }

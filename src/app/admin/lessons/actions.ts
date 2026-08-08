@@ -37,6 +37,45 @@ async function slugForLessonId(
   return data?.modules?.courses?.slug ?? null
 }
 
+/**
+ * Bloqueo de contenido para cursos publicados
+ * (SPEC-INSCRIPCIONES-SEGUIMIENTO §1.3 v1.2). Resuelve lesson → module →
+ * course con selects de columnas directas encadenados (no embeds de
+ * PostgREST — su forma es ambigua según cardinalidad, ver CLAUDE.md).
+ * Si la lección o la cadena están rotas devuelve null: los siguientes
+ * pasos del action ya validan la existencia del recurso.
+ */
+async function refuseIfPublishedByLesson(
+  admin: ReturnType<typeof createAdminClient>,
+  lessonId: string,
+): Promise<Result | null> {
+  const { data: lesson } = await admin
+    .from('lessons')
+    .select('module_id')
+    .eq('id', lessonId)
+    .maybeSingle<{ module_id: string }>()
+  if (!lesson?.module_id) return null
+  const { data: module_ } = await admin
+    .from('modules')
+    .select('course_id')
+    .eq('id', lesson.module_id)
+    .maybeSingle<{ course_id: string }>()
+  if (!module_?.course_id) return null
+  const { data: course } = await admin
+    .from('courses')
+    .select('published')
+    .eq('id', module_.course_id)
+    .maybeSingle<{ published: boolean }>()
+  if (course?.published) {
+    return {
+      ok: false,
+      error:
+        'El curso está publicado. Para modificar su contenido, despublícalo primero desde el panel del curso.',
+    }
+  }
+  return null
+}
+
 // SPEC-CONTENIDO-LECCIONES §2 CA-5 — validación por tipo y tamaño.
 // CLAUDE.md: "PPTX → PDF al subir; nunca servir PowerPoint al estudiante" →
 // slides solo acepta PDF en el upload.
@@ -77,6 +116,8 @@ export async function updateLessonBody(
 ): Promise<Result> {
   if (!(await ensureAdmin())) return { ok: false, error: 'No autorizado.' }
   const admin = createAdminClient()
+  const guard = await refuseIfPublishedByLesson(admin, lessonId)
+  if (guard) return guard
   // Cadena vacía → null para que el viewer muestre el placeholder consistente.
   const value = bodyMd.trim() === '' ? null : bodyMd
   const { error } = await admin.from('lessons').update({ body_md: value }).eq('id', lessonId)
@@ -105,6 +146,8 @@ export async function prepareLessonUpload(input: {
     return { ok: false, error: 'Cloudflare R2 no está configurado.' }
   }
   const admin = createAdminClient()
+  const guard = await refuseIfPublishedByLesson(admin, input.lessonId)
+  if (guard) return { ok: false, error: guard.error ?? 'Bloqueado.' }
   const { data: lesson } = await admin
     .from('lessons')
     .select('id, content_type')
@@ -152,6 +195,8 @@ export async function confirmLessonUpload(input: {
 }): Promise<Result> {
   if (!(await ensureAdmin())) return { ok: false, error: 'No autorizado.' }
   const admin = createAdminClient()
+  const guard = await refuseIfPublishedByLesson(admin, input.lessonId)
+  if (guard) return guard
   const { data: previous } = await admin
     .from('lessons')
     .select('content_r2_key')
@@ -185,6 +230,8 @@ export async function confirmLessonUpload(input: {
 export async function clearLessonContent(lessonId: string): Promise<Result> {
   if (!(await ensureAdmin())) return { ok: false, error: 'No autorizado.' }
   const admin = createAdminClient()
+  const guard = await refuseIfPublishedByLesson(admin, lessonId)
+  if (guard) return guard
   const { data: previous } = await admin
     .from('lessons')
     .select('content_r2_key')

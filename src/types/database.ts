@@ -405,6 +405,10 @@ export type Database = {
           verify_url: string | null
           duration_hours: number | null
           verification_id: string | null
+          course_title_snapshot: string | null
+          course_pass_score_snapshot: number | null
+          course_structure_snapshot: Json | null
+          snapshot_origin: string
         }
         Insert: {
           id?: string
@@ -425,6 +429,10 @@ export type Database = {
           verify_url?: string | null
           duration_hours?: number | null
           verification_id?: string | null
+          course_title_snapshot?: string | null
+          course_pass_score_snapshot?: number | null
+          course_structure_snapshot?: Json | null
+          snapshot_origin?: string
         }
         Update: {
           id?: string
@@ -445,6 +453,37 @@ export type Database = {
           verify_url?: string | null
           duration_hours?: number | null
           verification_id?: string | null
+          course_title_snapshot?: string | null
+          course_pass_score_snapshot?: number | null
+          course_structure_snapshot?: Json | null
+          snapshot_origin?: string
+        }
+        Relationships: []
+      }
+      attempt_unlocks: {
+        Row: {
+          id: string
+          user_id: string
+          evaluation_id: string
+          granted_by: string | null
+          granted_at: string
+          note: string | null
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          evaluation_id: string
+          granted_by?: string | null
+          granted_at?: string
+          note?: string | null
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          evaluation_id?: string
+          granted_by?: string | null
+          granted_at?: string
+          note?: string | null
         }
         Relationships: []
       }

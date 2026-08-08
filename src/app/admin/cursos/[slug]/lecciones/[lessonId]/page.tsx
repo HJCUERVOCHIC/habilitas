@@ -24,6 +24,7 @@ interface JoinedLesson {
       id: string
       slug: string
       title: string
+      published: boolean
     } | null
   } | null
 }
@@ -53,7 +54,7 @@ export default async function EditarLeccionPage({
       content_r2_key, content_original_name, content_mime_type, content_size_bytes,
       modules!inner (
         title, course_id,
-        courses!inner ( id, slug, title )
+        courses!inner ( id, slug, title, published )
       )
       `,
     )
@@ -113,6 +114,8 @@ export default async function EditarLeccionPage({
           content_size_bytes: data.content_size_bytes,
         }}
         r2Configured={isR2Configured()}
+        courseSlug={course.slug}
+        courseIsPublished={course.published}
       />
     </div>
   )

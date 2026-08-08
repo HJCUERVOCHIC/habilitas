@@ -14,6 +14,7 @@ import {
   gradeAttempt,
   isAttemptExpired,
 } from '@/lib/evaluation'
+import { revalidateStudentActivityForAdmin } from '@/lib/revalidate-admin'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import type { Json } from '@/types/database'
@@ -164,6 +165,12 @@ type BaseContext = {
   }
   evaluationId: string | null
   bankIds: string[]
+  /**
+   * Preguntas por intento efectivas (SPEC-INSCRIPCIONES-SEGUIMIENTO §1.8):
+   * viene de `evaluations.questions_per_attempt`. Fallback a la constante
+   * histórica cuando aún no hay `evaluation`.
+   */
+  questionsPerAttempt: number
 }
 
 async function loadBaseContext(slug: string): Promise<
@@ -197,7 +204,7 @@ async function loadBaseContext(slug: string): Promise<
 
   const { data: evaluation } = await admin
     .from('evaluations')
-    .select('id')
+    .select('id, questions_per_attempt')
     .eq('course_id', course.id)
     .maybeSingle()
 
@@ -215,8 +222,111 @@ async function loadBaseContext(slug: string): Promise<
       course,
       evaluationId: evaluation?.id ?? null,
       bankIds,
+      questionsPerAttempt: evaluation?.questions_per_attempt ?? QUESTIONS_PER_ATTEMPT,
     },
   }
+}
+
+/**
+ * Construye el snapshot de la estructura del curso (módulos + lecciones con
+ * su título y tipo) al momento de emitir la constancia. Se guarda como jsonb
+ * en `certificates.course_structure_snapshot` (H5).
+ *
+ * Selects de columnas directas encadenados: primero los módulos, después las
+ * lecciones filtradas por module_id. No usa embeds de PostgREST porque su
+ * forma (array vs objeto) depende de heurísticas de cardinalidad y puede
+ * romperse en silencio con el tipo genérico.
+ */
+export interface CourseStructureSnapshotModule {
+  title: string
+  lessons: { title: string; content_type: string }[]
+}
+
+async function buildCourseStructureSnapshot(
+  admin: SupabaseAdmin,
+  courseId: string,
+): Promise<CourseStructureSnapshotModule[]> {
+  const { data: modules } = await admin
+    .from('modules')
+    .select('id, title, order_index')
+    .eq('course_id', courseId)
+    .order('order_index')
+  const modList = modules ?? []
+  if (modList.length === 0) return []
+
+  const moduleIds = modList.map((m) => m.id)
+  const { data: lessons } = await admin
+    .from('lessons')
+    .select('module_id, title, content_type, order_index')
+    .in('module_id', moduleIds)
+    .order('order_index')
+  const lessonsByModule = new Map<string, { title: string; content_type: string }[]>()
+  for (const l of lessons ?? []) {
+    const arr = lessonsByModule.get(l.module_id) ?? []
+    arr.push({ title: l.title, content_type: l.content_type })
+    lessonsByModule.set(l.module_id, arr)
+  }
+  return modList.map((m) => ({
+    title: m.title,
+    lessons: lessonsByModule.get(m.id) ?? [],
+  }))
+}
+
+/**
+ * Resuelve el slug del curso al que pertenece una evaluación. Se usa para
+ * invalidar rutas de admin cuando el estudiante inicia o envía un intento
+ * (regla de invalidación cruzada, CLAUDE.md). Selects encadenados; no
+ * embeds. Loguea el fallo para no dejar la invalidación silenciosamente
+ * omitida.
+ */
+async function slugForEvaluationFromStudent(
+  admin: SupabaseAdmin,
+  evaluationId: string,
+): Promise<string | null> {
+  const { data: evaluation, error: evalErr } = await admin
+    .from('evaluations')
+    .select('course_id')
+    .eq('id', evaluationId)
+    .maybeSingle<{ course_id: string }>()
+  if (evalErr) {
+    console.error('[student→admin] slugForEvaluationFromStudent(eval):', evalErr.message, evaluationId)
+    return null
+  }
+  if (!evaluation?.course_id) {
+    console.warn('[student→admin] slugForEvaluationFromStudent sin course_id:', evaluationId)
+    return null
+  }
+  const { data: course, error: courseErr } = await admin
+    .from('courses')
+    .select('slug')
+    .eq('id', evaluation.course_id)
+    .maybeSingle<{ slug: string }>()
+  if (courseErr) {
+    console.error('[student→admin] slugForEvaluationFromStudent(course):', courseErr.message, evaluation.course_id)
+    return null
+  }
+  return course?.slug ?? null
+}
+
+/**
+ * Lee las anulaciones de bloqueo (F8) vigentes en la ventana para el par
+ * (user, evaluation). Usa el admin client porque la RLS del estudiante
+ * (`attempt_unlocks_own_read`) también funcionaría, pero mantenemos el admin
+ * para consistencia con las lecturas de banco.
+ */
+async function loadUserUnlocks(
+  admin: SupabaseAdmin,
+  userId: string,
+  evaluationId: string,
+): Promise<{ granted_at: string }[]> {
+  const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+  const { data } = await admin
+    .from('attempt_unlocks')
+    .select('granted_at')
+    .eq('user_id', userId)
+    .eq('evaluation_id', evaluationId)
+    .gte('granted_at', cutoff)
+  return (data ?? []).map((r) => ({ granted_at: r.granted_at }))
 }
 
 /**
@@ -232,9 +342,9 @@ export async function getEvaluationPageState(slug: string): Promise<EvalPageStat
     return { status: 'enrollment', slug }
   }
   const { ctx } = base
-  const { course, bankIds, evaluationId } = ctx
+  const { course, bankIds, evaluationId, questionsPerAttempt } = ctx
 
-  if (!evaluationId || bankIds.length < QUESTIONS_PER_ATTEMPT) {
+  if (!evaluationId || bankIds.length < questionsPerAttempt) {
     return {
       status: 'no-bank',
       courseTitle: course.title,
@@ -312,9 +422,11 @@ export async function getEvaluationPageState(slug: string): Promise<EvalPageStat
     }
   }
 
+  const unlocks = await loadUserUnlocks(ctx.admin, ctx.userId, evaluationId)
   const window = computeAttemptWindow(
     closedAttempts.map((a) => ({ submitted_at: a.submitted_at!, passed: a.passed ?? false })),
     course.max_attempts,
+    unlocks,
   )
 
   if (window.blocked) {
@@ -340,7 +452,7 @@ export async function getEvaluationPageState(slug: string): Promise<EvalPageStat
     passScore: course.pass_score,
     maxAttempts: course.max_attempts,
     remainingAttempts: window.remaining,
-    questionCount: QUESTIONS_PER_ATTEMPT,
+    questionCount: questionsPerAttempt,
     lastFailedScore: lastFailed?.score ?? null,
   }
 }
@@ -358,9 +470,9 @@ export async function startAttempt(slug: string): Promise<EvalStart> {
     return { ok: false, reason: 'no-bank' }
   }
   const { ctx } = base
-  const { evaluationId, bankIds, course } = ctx
+  const { evaluationId, bankIds, course, questionsPerAttempt } = ctx
 
-  if (!evaluationId || bankIds.length < QUESTIONS_PER_ATTEMPT) {
+  if (!evaluationId || bankIds.length < questionsPerAttempt) {
     return { ok: false, reason: 'no-bank' }
   }
 
@@ -378,13 +490,15 @@ export async function startAttempt(slug: string): Promise<EvalStart> {
   if (rows.some((r) => r.passed === true)) return { ok: false, reason: 'passed' }
 
   const closed = rows.filter((r) => r.submitted_at !== null)
+  const unlocks = await loadUserUnlocks(ctx.admin, ctx.userId, evaluationId)
   const window = computeAttemptWindow(
     closed.map((a) => ({ submitted_at: a.submitted_at!, passed: a.passed ?? false })),
     course.max_attempts,
+    unlocks,
   )
   if (window.blocked) return { ok: false, reason: 'blocked' }
 
-  const drawn = drawRandomIds(bankIds, QUESTIONS_PER_ATTEMPT)
+  const drawn = drawRandomIds(bankIds, questionsPerAttempt)
 
   // Número de intento monotónico dentro de la evaluación (para el histórico).
   const nextNumber = (rows[0]?.attempt_number ?? 0) + 1
@@ -402,6 +516,11 @@ export async function startAttempt(slug: string): Promise<EvalStart> {
   if (insertError || !attempt) return { ok: false, reason: 'no-bank' }
 
   const questions = await loadQuestionsForClient(ctx.admin, drawn)
+
+  // Invalidación cruzada estudiante → admin: iniciar un intento cambia el
+  // estado de evaluación en `/admin/cursos/[slug]/inscritos` y en la ficha
+  // (regla en CLAUDE.md). `course.slug` está en ctx, no requiere lookup.
+  revalidateStudentActivityForAdmin(course.slug, ctx.userId)
 
   return {
     ok: true,
@@ -521,6 +640,15 @@ export async function submitAttempt(
     .eq('id', attemptId)
   if (updateError) return { ok: false, reason: 'not-found' }
 
+  // Invalidación cruzada estudiante → admin: el intento cerrado (aprobado o
+  // reprobado) cambia el estado en `/admin/cursos/[slug]/inscritos` y en la
+  // ficha (regla CLAUDE.md). Si aprobó, `emitCertificate` invalidará otra
+  // vez tras insertar; `revalidatePath` es idempotente.
+  if (attempt.evaluation_id) {
+    const slug = await slugForEvaluationFromStudent(admin, attempt.evaluation_id)
+    if (slug) revalidateStudentActivityForAdmin(slug, user.id)
+  }
+
   const base = {
     ok: true as const,
     score,
@@ -554,7 +682,8 @@ export async function submitAttempt(
   }
 
   // Post-envío: recomputar ventana incluyendo este intento para saber si
-  // quedó bloqueado o aún puede reintentar.
+  // quedó bloqueado o aún puede reintentar. Los unlocks vigentes también
+  // cuentan para el techo efectivo.
   const { data: allAttempts } = await supabase
     .from('eval_attempts')
     .select('submitted_at, passed')
@@ -565,7 +694,8 @@ export async function submitAttempt(
     submitted_at: a.submitted_at as string,
     passed: a.passed ?? false,
   }))
-  const window = computeAttemptWindow(closed, maxAttempts)
+  const unlocks = await loadUserUnlocks(admin, user.id, attempt.evaluation_id!)
+  const window = computeAttemptWindow(closed, maxAttempts, unlocks)
   const extras =
     window.blocked
       ? { unlockAt: window.unlockAt, remainingAttempts: 0 }
@@ -648,7 +778,7 @@ export async function emitCertificate(attemptId: string): Promise<EmitCertificat
 
   const { data: course } = await admin
     .from('courses')
-    .select('id, title, cert_validity_days, instructor_id, duration_hours')
+    .select('id, title, cert_validity_days, instructor_id, duration_hours, pass_score')
     .eq('id', evaluation.course_id)
     .maybeSingle()
   if (!course) return { ok: false, reason: 'not-found' }
@@ -665,6 +795,12 @@ export async function emitCertificate(attemptId: string): Promise<EmitCertificat
         .eq('id', course.instructor_id)
         .maybeSingle()
     : { data: null }
+
+  // Snapshot de la estructura del curso al momento de emitir
+  // (SPEC-INSCRIPCIONES-SEGUIMIENTO §1.6, H5). Selects encadenados:
+  // primero los módulos, luego las lecciones filtradas por module_id, para
+  // no depender de embeds de PostgREST (CLAUDE.md: forma ambigua).
+  const structureSnapshot = await buildCourseStructureSnapshot(admin, course.id)
 
   const { data: certId, error: rpcError } = await admin.rpc('generate_cert_id')
   if (rpcError || !certId) return { ok: false, reason: 'cert-id' }
@@ -690,8 +826,27 @@ export async function emitCertificate(attemptId: string): Promise<EmitCertificat
     instructor_role: instructor?.profession ?? null,
     verify_url: verifyUrl,
     duration_hours: course.duration_hours,
+    course_title_snapshot: course.title,
+    course_pass_score_snapshot: course.pass_score,
+    course_structure_snapshot: structureSnapshot as unknown as Json,
+    snapshot_origin: 'live',
   })
   if (insertError) return { ok: false, reason: 'insert' }
+
+  // Invalidación cruzada estudiante → admin: la constancia recién emitida
+  // aparece en `/admin/certificados`, en la ficha del estudiante y en la
+  // lista de inscritos del curso (regla CLAUDE.md). Fue el bug reproducido
+  // el 07-ago (HAB-2026-0001 no aparecía sin recarga forzada).
+  const { data: courseSlug } = await admin
+    .from('courses')
+    .select('slug')
+    .eq('id', course.id)
+    .maybeSingle<{ slug: string }>()
+  if (courseSlug?.slug) {
+    revalidateStudentActivityForAdmin(courseSlug.slug, attempt.user_id)
+  } else {
+    console.warn('[student→admin] emitCertificate sin slug del curso:', course.id)
+  }
 
   await sendCertificateEmail({
     to: user.email ?? '',

@@ -1,10 +1,12 @@
 import { CatalogClient } from '@/components/cert/CatalogClient'
 import { ComplianceNotice } from '@/components/compliance/ComplianceNotice'
-import { Topbar } from '@/components/layout/Topbar'
+import { PublicShell } from '@/components/layout/PublicShell'
 import { createPublicClient } from '@/lib/supabase/public'
 
-// Catálogo (ISR, revalida 1h). Solo cursos publicados (RLS courses_public_read).
-export const revalidate = 3600
+// Dinámico: el encabezado se decide por sesión (PublicShell). Un estudiante
+// autenticado que llega al catálogo ve AppNav en lugar del Topbar público,
+// así que la respuesta ya no puede cachearse como estática.
+export const dynamic = 'force-dynamic'
 
 export const metadata = {
   title: 'Cursos — Habilitas',
@@ -23,7 +25,7 @@ export default async function CertificacionesPage() {
 
   return (
     <>
-      <Topbar />
+      <PublicShell />
       <main className="min-h-screen bg-mist">
         <div className="mx-auto max-w-6xl px-6 py-12">
           <h1 className="font-display text-display-lg text-charcoal">Cursos</h1>

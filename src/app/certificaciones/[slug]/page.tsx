@@ -4,7 +4,7 @@ import { PurchaseCard } from '@/components/cert/PurchaseCard'
 import { ComplianceNotice } from '@/components/compliance/ComplianceNotice'
 import { ModalityBadge } from '@/components/compliance/ModalityBadge'
 import { CategoryBadge, DifficultyDots } from '@/components/ui/Badge'
-import { Topbar } from '@/components/layout/Topbar'
+import { PublicShell } from '@/components/layout/PublicShell'
 import { isCategory } from '@/lib/categories'
 import { createClient } from '@/lib/supabase/server'
 
@@ -85,7 +85,7 @@ export default async function DetalleCursoPage({ params }: { params: { slug: str
 
   return (
     <>
-      <Topbar />
+      <PublicShell />
       <main className="min-h-screen bg-mist">
         {/* Header */}
         <div className="border-b border-border bg-white">

@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 
@@ -32,6 +33,8 @@ export interface AdminQuestion {
 
 interface EvaluationManagerProps {
   courseId: string
+  courseSlug: string
+  courseIsPublished: boolean
   evaluationId: string | null
   questionsPerAttempt: number
   passScore: number
@@ -40,6 +43,8 @@ interface EvaluationManagerProps {
 
 export function EvaluationManager({
   courseId,
+  courseSlug,
+  courseIsPublished,
   evaluationId,
   questionsPerAttempt,
   passScore,
@@ -50,20 +55,23 @@ export function EvaluationManager({
 
   if (!evaluationId) {
     return (
-      <div className="rounded-lg border border-border bg-white p-6 text-center shadow-sm">
-        <p className="mb-4 text-ink-soft">Este curso aún no tiene evaluación.</p>
-        <Button
-          variant="primary"
-          disabled={busy}
-          onClick={async () => {
-            setBusy(true)
-            await ensureEvaluation(courseId)
-            setBusy(false)
-            router.refresh()
-          }}
-        >
-          Crear evaluación
-        </Button>
+      <div className="space-y-4">
+        {courseIsPublished && <PublishedLockBanner slug={courseSlug} />}
+        <div className="rounded-lg border border-border bg-white p-6 text-center shadow-sm">
+          <p className="mb-4 text-ink-soft">Este curso aún no tiene evaluación.</p>
+          <Button
+            variant="primary"
+            disabled={busy || courseIsPublished}
+            onClick={async () => {
+              setBusy(true)
+              await ensureEvaluation(courseId)
+              setBusy(false)
+              router.refresh()
+            }}
+          >
+            Crear evaluación
+          </Button>
+        </div>
       </div>
     )
   }
@@ -73,11 +81,14 @@ export function EvaluationManager({
 
   return (
     <div className="space-y-6">
+      {courseIsPublished && <PublishedLockBanner slug={courseSlug} />}
+
       <ConfigPanel
         courseId={courseId}
         initialQuestionsPerAttempt={questionsPerAttempt}
         initialPassScore={passScore}
         bankSize={questions.length}
+        locked={courseIsPublished}
       />
 
       <BankSummary
@@ -95,6 +106,7 @@ export function EvaluationManager({
             isFirst={index === 0}
             isLast={index === questions.length - 1}
             onMutated={() => router.refresh()}
+            locked={courseIsPublished}
           />
         ))}
         {questions.length === 0 && (
@@ -107,7 +119,27 @@ export function EvaluationManager({
       <NewQuestionForm
         evaluationId={evaluationId}
         onDone={() => router.refresh()}
+        locked={courseIsPublished}
       />
+    </div>
+  )
+}
+
+function PublishedLockBanner({ slug }: { slug: string }) {
+  return (
+    <div
+      role="status"
+      className="rounded-lg border border-amber/40 bg-amber-pale/60 p-4 text-sm text-ink-main"
+    >
+      <p className="font-semibold text-amber">Curso publicado · edición bloqueada</p>
+      <p className="mt-1 text-xs text-ink-soft">
+        Un curso publicado no admite modificaciones. Para editar el banco de preguntas o la
+        configuración de la evaluación, despublica primero el curso desde{' '}
+        <Link href={`/admin/cursos/${slug}`} className="text-teal underline">
+          su panel
+        </Link>
+        . El progreso de los inscritos se conserva.
+      </p>
     </div>
   )
 }
@@ -117,11 +149,13 @@ function ConfigPanel({
   initialQuestionsPerAttempt,
   initialPassScore,
   bankSize,
+  locked,
 }: {
   courseId: string
   initialQuestionsPerAttempt: number
   initialPassScore: number
   bankSize: number
+  locked: boolean
 }) {
   const router = useRouter()
   const [qpa, setQpa] = useState(initialQuestionsPerAttempt)
@@ -166,6 +200,7 @@ function ConfigPanel({
             className={FIELD}
             value={qpa}
             onChange={(e) => setQpa(Math.max(1, Number(e.target.value || 1)))}
+            disabled={locked}
           />
           <span className="mt-1 block text-xs text-ink-muted">
             Cuántas preguntas se sortean del banco en cada intento. Hoy el banco
@@ -186,6 +221,7 @@ function ConfigPanel({
               onChange={(e) =>
                 setPass(Math.min(100, Math.max(0, Number(e.target.value || 0))))
               }
+              disabled={locked}
             />
             <span className="text-sm text-ink-soft">%</span>
           </div>
@@ -195,7 +231,7 @@ function ConfigPanel({
         </label>
       </div>
       <div className="mt-4 flex items-center gap-3">
-        <Button variant="primary" size="sm" onClick={save} disabled={busy || !dirty}>
+        <Button variant="primary" size="sm" onClick={save} disabled={busy || !dirty || locked}>
           {busy ? 'Guardando…' : 'Guardar configuración'}
         </Button>
         {status === 'saved' && <span className="text-xs text-green-ok">✓ Guardado</span>}
@@ -241,12 +277,14 @@ function QuestionRow({
   isFirst,
   isLast,
   onMutated,
+  locked,
 }: {
   question: AdminQuestion
   index: number
   isFirst: boolean
   isLast: boolean
   onMutated: () => void
+  locked: boolean
 }) {
   const [editing, setEditing] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -307,7 +345,7 @@ function QuestionRow({
           <button
             type="button"
             onClick={() => move('up')}
-            disabled={busy || isFirst}
+            disabled={busy || isFirst || locked}
             aria-label="Mover arriba"
             className="rounded-md px-1.5 py-0.5 text-sm text-ink-soft hover:bg-mist disabled:opacity-40"
           >
@@ -316,7 +354,7 @@ function QuestionRow({
           <button
             type="button"
             onClick={() => move('down')}
-            disabled={busy || isLast}
+            disabled={busy || isLast || locked}
             aria-label="Mover abajo"
             className="rounded-md px-1.5 py-0.5 text-sm text-ink-soft hover:bg-mist disabled:opacity-40"
           >
@@ -325,16 +363,17 @@ function QuestionRow({
         </div>
         <button
           type="button"
-          className="text-xs text-teal hover:underline"
+          className="text-xs text-teal hover:underline disabled:cursor-not-allowed disabled:opacity-40"
           onClick={() => setEditing(true)}
+          disabled={locked}
         >
           Editar
         </button>
         <button
           type="button"
           onClick={remove}
-          disabled={busy}
-          className="shrink-0 text-xs text-red-err hover:underline"
+          disabled={busy || locked}
+          className="shrink-0 text-xs text-red-err hover:underline disabled:cursor-not-allowed disabled:opacity-40"
         >
           Eliminar
         </button>
@@ -346,11 +385,14 @@ function QuestionRow({
 function NewQuestionForm({
   evaluationId,
   onDone,
+  locked,
 }: {
   evaluationId: string
   onDone: () => void
+  locked: boolean
 }) {
   const [resetKey, setResetKey] = useState(0)
+  if (locked) return null
   return (
     <div className="rounded-lg border border-border bg-white p-4 shadow-sm">
       <h3 className="mb-3 font-semibold text-charcoal">Nueva pregunta</h3>

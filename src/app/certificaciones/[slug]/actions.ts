@@ -2,6 +2,7 @@
 
 import { redirect } from 'next/navigation'
 
+import { revalidateStudentActivityForAdmin } from '@/lib/revalidate-admin'
 import { createClient } from '@/lib/supabase/server'
 
 /**
@@ -46,12 +47,22 @@ export async function enrollCourse(formData: FormData) {
   if (!course) redirect('/certificaciones')
 
   // Idempotente: si ya está inscrito, no duplica (DO NOTHING sobre el UNIQUE).
-  await supabase
+  const { error: enrollError } = await supabase
     .from('enrollments')
     .upsert(
       { user_id: user.id, course_id: course.id },
       { onConflict: 'user_id,course_id', ignoreDuplicates: true },
     )
+  if (enrollError) {
+    console.error('[enrollCourse] upsert falló:', enrollError.message, {
+      user_id: user.id,
+      course_id: course.id,
+    })
+  } else {
+    // Invalidación cruzada estudiante → admin: el panel debe ver la nueva
+    // inscripción al instante (regla en CLAUDE.md).
+    revalidateStudentActivityForAdmin(slug, user.id)
+  }
 
   redirect(`/curso/${slug}`)
 }

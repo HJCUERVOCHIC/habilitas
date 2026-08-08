@@ -40,15 +40,22 @@ export interface AdminModule {
  *
  * Bloque 2 conecta cada lección con su editor de contenido
  * (`/admin/cursos/[slug]/lecciones/[lessonId]`), por eso recibe `courseSlug`.
+ *
+ * SPEC-INSCRIPCIONES-SEGUIMIENTO §1.3 v1.2: si el curso está publicado, los
+ * controles quedan deshabilitados y aparece un banner. La revisión del
+ * contenido es responsabilidad previa a publicar; para modificar hay que
+ * despublicar. El servidor rechaza igual si alguien salta la UI.
  */
 export function ModulesManager({
   courseId,
   courseSlug,
   modules,
+  courseIsPublished,
 }: {
   courseId: string
   courseSlug: string
   modules: AdminModule[]
+  courseIsPublished: boolean
 }) {
   const router = useRouter()
   const [newModule, setNewModule] = useState('')
@@ -63,16 +70,21 @@ export function ModulesManager({
     router.refresh()
   }
 
+  const locked = courseIsPublished
+
   return (
     <div className="space-y-6">
+      {locked && <PublishedLockBanner slug={courseSlug} />}
+
       <div className="flex gap-2">
         <input
           className={`${FIELD} flex-1`}
           placeholder="Título del nuevo módulo"
           value={newModule}
           onChange={(e) => setNewModule(e.target.value)}
+          disabled={locked}
         />
-        <Button variant="primary" size="sm" onClick={addModule} disabled={busy}>
+        <Button variant="primary" size="sm" onClick={addModule} disabled={busy || locked}>
           Añadir módulo
         </Button>
       </div>
@@ -86,12 +98,34 @@ export function ModulesManager({
           isFirst={index === 0}
           isLast={index === modules.length - 1}
           onMutated={() => router.refresh()}
+          locked={locked}
         />
       ))}
 
       {modules.length === 0 && (
         <p className="text-sm text-ink-muted">Aún no hay módulos. Añade el primero arriba.</p>
       )}
+    </div>
+  )
+}
+
+function PublishedLockBanner({ slug }: { slug: string }) {
+  return (
+    <div
+      role="status"
+      className="rounded-lg border border-amber/40 bg-amber-pale/60 p-4 text-sm text-ink-main"
+    >
+      <p className="font-semibold text-amber">Curso publicado · edición bloqueada</p>
+      <p className="mt-1 text-xs text-ink-soft">
+        Un curso publicado no admite modificaciones de contenido. Para editar módulos,
+        lecciones, texto, medios, banco de preguntas o configuración de evaluación,
+        despublica primero el curso desde{' '}
+        <Link href={`/admin/cursos/${slug}`} className="text-teal underline">
+          su panel
+        </Link>
+        . Al despublicarlo dejará de ser visible en el catálogo; el progreso de los
+        inscritos se conserva.
+      </p>
     </div>
   )
 }
@@ -103,6 +137,7 @@ function ModuleCard({
   isFirst,
   isLast,
   onMutated,
+  locked,
 }: {
   courseSlug: string
   module: AdminModule
@@ -110,6 +145,7 @@ function ModuleCard({
   isFirst: boolean
   isLast: boolean
   onMutated: () => void
+  locked: boolean
 }) {
   const [editing, setEditing] = useState(false)
   const [title, setTitle] = useState(module.title)
@@ -135,16 +171,18 @@ function ModuleCard({
 
   async function move(direction: 'up' | 'down') {
     setBusy(true)
-    await reorderModule(module.id, direction)
+    const res = await reorderModule(module.id, direction)
     setBusy(false)
+    if (!res.ok && res.error) setError(res.error)
     onMutated()
   }
 
   async function remove() {
     if (!window.confirm(`¿Eliminar el módulo "${module.title}" y todas sus lecciones?`)) return
     setBusy(true)
-    await deleteModule(module.id)
+    const res = await deleteModule(module.id)
     setBusy(false)
+    if (!res.ok && res.error) setError(res.error)
     onMutated()
   }
 
@@ -165,7 +203,7 @@ function ModuleCard({
         )}
         <div className="flex items-center gap-2">
           <OrderButtons
-            disabled={busy}
+            disabled={busy || locked}
             isFirst={isFirst}
             isLast={isLast}
             onUp={() => move('up')}
@@ -173,7 +211,7 @@ function ModuleCard({
           />
           {editing ? (
             <>
-              <Button variant="primary" size="sm" onClick={save} disabled={busy}>
+              <Button variant="primary" size="sm" onClick={save} disabled={busy || locked}>
                 Guardar
               </Button>
               <button
@@ -191,8 +229,9 @@ function ModuleCard({
           ) : (
             <button
               type="button"
-              className="text-xs text-teal hover:underline"
+              className="text-xs text-teal hover:underline disabled:cursor-not-allowed disabled:opacity-40"
               onClick={() => setEditing(true)}
+              disabled={locked}
             >
               Editar
             </button>
@@ -200,8 +239,8 @@ function ModuleCard({
           <button
             type="button"
             onClick={remove}
-            disabled={busy}
-            className="text-xs text-red-err hover:underline"
+            disabled={busy || locked}
+            className="text-xs text-red-err hover:underline disabled:cursor-not-allowed disabled:opacity-40"
           >
             Eliminar módulo
           </button>
@@ -218,6 +257,7 @@ function ModuleCard({
             isFirst={i === 0}
             isLast={i === module.lessons.length - 1}
             onMutated={onMutated}
+            locked={locked}
           />
         ))}
         {module.lessons.length === 0 && (
@@ -225,7 +265,7 @@ function ModuleCard({
         )}
       </ul>
 
-      <NewLessonForm moduleId={module.id} onDone={onMutated} />
+      <NewLessonForm moduleId={module.id} onDone={onMutated} locked={locked} />
     </div>
   )
 }
@@ -236,12 +276,14 @@ function LessonRow({
   isFirst,
   isLast,
   onMutated,
+  locked,
 }: {
   courseSlug: string
   lesson: AdminLesson
   isFirst: boolean
   isLast: boolean
   onMutated: () => void
+  locked: boolean
 }) {
   const [editing, setEditing] = useState(false)
   const [title, setTitle] = useState(lesson.title)
@@ -268,16 +310,18 @@ function LessonRow({
 
   async function move(direction: 'up' | 'down') {
     setBusy(true)
-    await reorderLesson(lesson.id, direction)
+    const res = await reorderLesson(lesson.id, direction)
     setBusy(false)
+    if (!res.ok && res.error) setError(res.error)
     onMutated()
   }
 
   async function remove() {
     if (!window.confirm(`¿Eliminar la lección "${lesson.title}"?`)) return
     setBusy(true)
-    await deleteLesson(lesson.id)
+    const res = await deleteLesson(lesson.id)
     setBusy(false)
+    if (!res.ok && res.error) setError(res.error)
     onMutated()
   }
 
@@ -289,11 +333,13 @@ function LessonRow({
             className={`${FIELD} flex-1`}
             value={title}
             onChange={(e) => setTitle(e.target.value)}
+            disabled={locked}
           />
           <select
             className={FIELD}
             value={contentType}
             onChange={(e) => setContentType(e.target.value)}
+            disabled={locked}
           >
             {LESSON_TYPES.map((t) => (
               <option key={t} value={t}>
@@ -301,7 +347,7 @@ function LessonRow({
               </option>
             ))}
           </select>
-          <Button variant="primary" size="sm" onClick={save} disabled={busy}>
+          <Button variant="primary" size="sm" onClick={save} disabled={busy || locked}>
             Guardar
           </Button>
           <button
@@ -333,7 +379,7 @@ function LessonRow({
       </span>
       <div className="flex items-center gap-2">
         <OrderButtons
-          disabled={busy}
+          disabled={busy || locked}
           isFirst={isFirst}
           isLast={isLast}
           onUp={() => move('up')}
@@ -347,20 +393,22 @@ function LessonRow({
         </Link>
         <button
           type="button"
-          className="text-xs text-teal hover:underline"
+          className="text-xs text-teal hover:underline disabled:cursor-not-allowed disabled:opacity-40"
           onClick={() => setEditing(true)}
+          disabled={locked}
         >
           Editar
         </button>
         <button
           type="button"
-          disabled={busy}
+          disabled={busy || locked}
           onClick={remove}
-          className="text-xs text-red-err hover:underline"
+          className="text-xs text-red-err hover:underline disabled:cursor-not-allowed disabled:opacity-40"
         >
           Eliminar
         </button>
       </div>
+      {error && <p className="ml-2 text-xs text-red-err">{error}</p>}
     </li>
   )
 }
@@ -402,7 +450,15 @@ function OrderButtons({
   )
 }
 
-function NewLessonForm({ moduleId, onDone }: { moduleId: string; onDone: () => void }) {
+function NewLessonForm({
+  moduleId,
+  onDone,
+  locked,
+}: {
+  moduleId: string
+  onDone: () => void
+  locked: boolean
+}) {
   const [title, setTitle] = useState('')
   const [contentType, setContentType] = useState<string>('video')
   const [busy, setBusy] = useState(false)
@@ -439,12 +495,14 @@ function NewLessonForm({ moduleId, onDone }: { moduleId: string; onDone: () => v
         placeholder="Título de la lección"
         value={title}
         onChange={(e) => setTitle(e.target.value)}
+        disabled={locked}
       />
       <select
         className={FIELD}
         value={contentType}
         onChange={(e) => setContentType(e.target.value)}
         aria-label="Tipo de lección"
+        disabled={locked}
       >
         {LESSON_TYPES.map((t) => (
           <option key={t} value={t}>
@@ -452,7 +510,7 @@ function NewLessonForm({ moduleId, onDone }: { moduleId: string; onDone: () => v
           </option>
         ))}
       </select>
-      <Button variant="ghost" size="sm" onClick={add} disabled={busy}>
+      <Button variant="ghost" size="sm" onClick={add} disabled={busy || locked}>
         Añadir lección
       </Button>
       {error && <span className="text-xs text-red-err">{error}</span>}

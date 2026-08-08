@@ -23,6 +23,8 @@ Next.js 14 App Router · TypeScript estricto · Tailwind + design system propio 
 - PPTX → PDF al subir; nunca servir PowerPoint al estudiante.
 - `/verificar/[id]` en SSR (`force-dynamic`): el estado del certificado debe ser tiempo real.
 - Magic Link, sin contraseñas.
+- **Invalidación tras mutar.** Todo server action que modifique datos debe invalidar las rutas afectadas con `revalidatePath()` antes de retornar. Marcar una página como dinámica no invalida el Router Cache del cliente. Ante un síntoma de "el cambio no aparece hasta recargar", revisar primero la invalidación del action, no la lógica de lectura.
+- **La invalidación cruza roles.** Una mutación del estudiante que cambie datos visibles en el panel debe invalidar también las rutas de admin, y viceversa. Usa el helper `revalidateStudentActivityForAdmin(slug, userId)` en los actions del alumno que afectan al panel (progreso, inscripción, intentos, constancias).
 
 ## Decisiones de producto — CONTRATO (HABILITAS-ESPECIFICACION-FUNCIONAL.md §8)
 - **D1** — Evaluación: sin feedback por pregunta durante el intento calificado. Al enviar: aprobado puede revisar respuestas con explicaciones; reprobado solo ve temas a reforzar (nunca la respuesta literal) y reintenta con un nuevo sorteo.

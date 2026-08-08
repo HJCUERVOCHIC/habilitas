@@ -27,12 +27,23 @@ export function PublishActions({
     setBusy(true)
     setError('')
     const res = await setPublished(courseId, !published)
-    setBusy(false)
-    if (res.ok) {
-      router.refresh()
-    } else {
-      setError(res.error ?? 'No se pudo cambiar el estado.')
+    if (!res.ok && res.requiresConfirmation) {
+      const activeCount = res.activeCount ?? 0
+      const message =
+        `Este curso tiene ${activeCount} estudiante(s) activo(s). Al despublicarlo dejará de ser visible para ellos, pero su progreso se conserva y podrás publicarlo de nuevo cuando quieras.\n\n¿Continuar?`
+      if (!window.confirm(message)) {
+        setBusy(false)
+        return
+      }
+      const confirmed = await setPublished(courseId, !published, { confirmed: true })
+      setBusy(false)
+      if (confirmed.ok) router.refresh()
+      else setError(confirmed.error ?? 'No se pudo cambiar el estado.')
+      return
     }
+    setBusy(false)
+    if (res.ok) router.refresh()
+    else setError(res.error ?? 'No se pudo cambiar el estado.')
   }
 
   if (published) {

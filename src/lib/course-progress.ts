@@ -64,9 +64,16 @@ export function progressPct(modules: ModuleWithLessons[], progress: ProgressMap)
 }
 
 /**
- * Desbloqueo progresivo **por lección** (SPEC-REPRODUCTOR-PROGRESO §1.2): la
- * primera lección del curso siempre está abierta; cualquier otra queda
- * desbloqueada solo cuando la anterior (en orden natural) está completada.
+ * Desbloqueo progresivo **por lección** (SPEC-REPRODUCTOR-PROGRESO §1.2 +
+ * SPEC-INSCRIPCIONES-SEGUIMIENTO §1.7): la primera lección del curso siempre
+ * está abierta; cualquier otra queda desbloqueada cuando la anterior en el
+ * orden natural está completada **o** cuando la propia lección ya fue
+ * completada por el estudiante.
+ *
+ * La segunda cláusula hace el desbloqueo irreversible ante reordenamientos:
+ * si un admin reorganiza el curso, una lección que este estudiante ya cerró
+ * no vuelve a quedar bloqueada por el cambio de orden. Elimina por diseño el
+ * riesgo que motivaba tratar el reordenamiento como operación destructiva.
  */
 export function isLessonAccessible(
   modules: ModuleWithLessons[],
@@ -80,6 +87,7 @@ export function isLessonAccessible(
   const idx = flat.indexOf(lessonId)
   if (idx === -1) return false
   if (idx === 0) return true
+  if (isLessonCompleted(progress, lessonId)) return true
   const prev = flat[idx - 1]
   return prev != null && isLessonCompleted(progress, prev)
 }

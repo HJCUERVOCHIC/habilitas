@@ -124,7 +124,7 @@ describe('computeAttemptWindow', () => {
   const isoHoursAgo = (h: number) => new Date(now - h * 3_600_000).toISOString()
 
   it('sin intentos → todos disponibles', () => {
-    const w = computeAttemptWindow([], 3, now)
+    const w = computeAttemptWindow([], 3, [], now)
     expect(w.blocked).toBe(false)
     if (!w.blocked) {
       expect(w.attemptsUsed).toBe(0)
@@ -136,6 +136,7 @@ describe('computeAttemptWindow', () => {
     const w = computeAttemptWindow(
       [{ submitted_at: isoHoursAgo(1), passed: false }],
       3,
+      [],
       now,
     )
     expect(w.blocked).toBe(false)
@@ -154,6 +155,7 @@ describe('computeAttemptWindow', () => {
         { submitted_at: lastAttempt, passed: false },
       ],
       3,
+      [],
       now,
     )
     expect(w.blocked).toBe(true)
@@ -174,6 +176,7 @@ describe('computeAttemptWindow', () => {
         { submitted_at: isoDaysAgo(2), passed: false },
       ],
       3,
+      [],
       now,
     )
     expect(w.blocked).toBe(false)
@@ -190,6 +193,7 @@ describe('computeAttemptWindow', () => {
         { submitted_at: isoHoursAgo(10), passed: false }, // dentro
       ],
       3,
+      [],
       now,
     )
     expect(w.blocked).toBe(false)
@@ -203,9 +207,60 @@ describe('computeAttemptWindow', () => {
     const w = computeAttemptWindow(
       [{ submitted_at: new Date(now - BLOCK_SEC * 1000).toISOString(), passed: false }],
       3,
+      [],
       now,
     )
     expect(w.blocked).toBe(false)
     if (!w.blocked) expect(w.attemptsUsed).toBe(1)
+  })
+
+  it('un unlock concedido en ventana desbloquea al estudiante bloqueado', () => {
+    const lastAttempt = isoHoursAgo(2)
+    const w = computeAttemptWindow(
+      [
+        { submitted_at: isoHoursAgo(5), passed: false },
+        { submitted_at: isoHoursAgo(3), passed: false },
+        { submitted_at: lastAttempt, passed: false },
+      ],
+      3,
+      [{ granted_at: isoHoursAgo(1) }],
+      now,
+    )
+    expect(w.blocked).toBe(false)
+    if (!w.blocked) {
+      expect(w.attemptsUsed).toBe(3)
+      expect(w.extraGranted).toBe(1)
+      expect(w.remaining).toBe(1)
+    }
+  })
+
+  it('unlock viejo (>24 h) ya no cuenta — la ventana lo descarta como a los intentos', () => {
+    const w = computeAttemptWindow(
+      [
+        { submitted_at: isoHoursAgo(5), passed: false },
+        { submitted_at: isoHoursAgo(3), passed: false },
+        { submitted_at: isoHoursAgo(2), passed: false },
+      ],
+      3,
+      [{ granted_at: isoDaysAgo(3) }],
+      now,
+    )
+    expect(w.blocked).toBe(true)
+    if (w.blocked) expect(w.extraGranted).toBe(0)
+  })
+
+  it('unlock concede un intento adicional, no restablece todos', () => {
+    // Sin intentos usados: el techo pasa de 3 a 4, no a infinito.
+    const w = computeAttemptWindow(
+      [],
+      3,
+      [{ granted_at: isoHoursAgo(1) }],
+      now,
+    )
+    expect(w.blocked).toBe(false)
+    if (!w.blocked) {
+      expect(w.extraGranted).toBe(1)
+      expect(w.remaining).toBe(4)
+    }
   })
 })

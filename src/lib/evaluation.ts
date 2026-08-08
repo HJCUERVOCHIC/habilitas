@@ -79,35 +79,49 @@ export interface CompletedAttempt {
   passed: boolean
 }
 
+export interface AttemptUnlockEntry {
+  granted_at: string
+}
+
 export type AttemptWindow =
-  | { blocked: false; attemptsUsed: number; remaining: number }
-  | { blocked: true; attemptsUsed: number; remaining: 0; unlockAt: string }
+  | { blocked: false; attemptsUsed: number; remaining: number; extraGranted: number }
+  | { blocked: true; attemptsUsed: number; remaining: 0; unlockAt: string; extraGranted: number }
 
 /**
- * Modela intentos e bloqueo (spec §1.6). Cuenta intentos **cerrados** dentro
- * de la ventana de 24 h; si el estudiante los agotó sin aprobar, queda
- * bloqueado hasta `último submitted_at + 24 h`. Cuando pasa el bloqueo la
- * ventana se reinicia (los intentos antiguos no cuentan). El caller debe
- * filtrar antes los intentos aprobados: `hasPassed` cierra la evaluación y
- * no consume ventana.
+ * Modela intentos y bloqueo (spec §1.6 + SPEC-INSCRIPCIONES-SEGUIMIENTO §1.4).
+ * Cuenta intentos **cerrados** dentro de la ventana móvil de 24 h; si el
+ * estudiante los agotó sin aprobar, queda bloqueado hasta
+ * `último submitted_at + 24 h`. Cuando pasa el bloqueo la ventana se reinicia
+ * (los intentos antiguos no cuentan). El caller debe filtrar antes los
+ * intentos aprobados: `hasPassed` cierra la evaluación y no consume ventana.
+ *
+ * Anulación manual (F8). `unlocks` son concesiones explícitas del admin, una
+ * por intento adicional. Se cuentan dentro de la misma ventana móvil: un
+ * unlock caduca 24 h después de concederse si no se usa. El techo efectivo
+ * pasa a ser `maxAttempts + unlocksEnVentana`. El historial de intentos no
+ * se toca; el unlock solo agranda el techo.
  */
 export function computeAttemptWindow(
   completedAttempts: readonly CompletedAttempt[],
   maxAttempts: number,
+  unlocks: readonly AttemptUnlockEntry[] = [],
   nowMs: number = Date.now(),
 ): AttemptWindow {
   const cutoff = nowMs - BLOCK_SEC * 1000
   const inWindow = completedAttempts.filter((a) => new Date(a.submitted_at).getTime() >= cutoff)
+  const unlocksInWindow = unlocks.filter((u) => new Date(u.granted_at).getTime() >= cutoff)
   const attemptsUsed = inWindow.length
-  const remaining = Math.max(0, maxAttempts - attemptsUsed)
-  if (remaining > 0) return { blocked: false, attemptsUsed, remaining }
+  const extraGranted = unlocksInWindow.length
+  const effectiveMax = maxAttempts + extraGranted
+  const remaining = Math.max(0, effectiveMax - attemptsUsed)
+  if (remaining > 0) return { blocked: false, attemptsUsed, remaining, extraGranted }
 
   // Sin intentos: buscar el más reciente para calcular el desbloqueo.
   const latest = inWindow.reduce<CompletedAttempt | null>((acc, a) => {
     if (!acc) return a
     return new Date(a.submitted_at).getTime() > new Date(acc.submitted_at).getTime() ? a : acc
   }, null)
-  if (!latest) return { blocked: false, attemptsUsed: 0, remaining: maxAttempts }
+  if (!latest) return { blocked: false, attemptsUsed: 0, remaining: effectiveMax, extraGranted }
   const unlockAt = new Date(new Date(latest.submitted_at).getTime() + BLOCK_SEC * 1000).toISOString()
-  return { blocked: true, attemptsUsed, remaining: 0, unlockAt }
+  return { blocked: true, attemptsUsed, remaining: 0, unlockAt, extraGranted }
 }

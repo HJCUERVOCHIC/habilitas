@@ -2,7 +2,7 @@
 
 **Bloque 5 del rol administrador — Inscripciones, seguimiento y salvaguardas**
 
-v1.1 · 07-ago-2026 · Ajustado con los hallazgos de la auditoría §0.A
+v1.2 · 07-ago-2026 · Política de salvaguardas revisada: bloqueo por publicación en vez de confirmación por conteo
 
 ---
 
@@ -99,33 +99,31 @@ Desde la lista, acceso a una ficha con:
 
 ### 3. Salvaguardas de edición
 
-**Definición operativa de "inscrito activo":** inscripción **sin constancia emitida**. Quien terminó queda protegido por el snapshot (§1.6); quien está en curso, por estas guardas. Los dos mecanismos se reparten el problema sin solaparse.
+**Regla (v1.2).** Un curso **publicado** no admite modificaciones de contenido. No importa si tiene inscritos o no: si `status = publicado`, se bloquea. La revisión del contenido es responsabilidad **previa** a publicar; para modificar hay que despublicar primero. Se reemplaza el esquema anterior de "confirmación con conteo de inscritos activos" por un bloqueo duro basado únicamente en el estado de publicación.
 
-**Operaciones seguras — sin guarda:**
-- Editar el texto Markdown de una lección.
-- Editar título, descripción o metadatos del curso.
-- Añadir módulo o lección **al final**.
-- Subir o reemplazar el archivo de una lección existente.
+**Definición operativa de "inscrito activo".** Se conserva —inscripción **sin constancia emitida**— porque sigue siendo útil para: la vista de inscritos, la ficha del estudiante, y el aviso contextual al despublicar. Ya no se usa como condición para permitir/exigir confirmación en operaciones de contenido.
 
-**Operaciones que exigen confirmación explícita cuando hay inscritos activos:**
-- Eliminar una lección o un módulo.
-- Cambiar el tipo de una lección.
-- Modificar el banco de preguntas o la nota mínima.
-- Despublicar el curso.
-- **Archivar** el curso.
+**Bloqueadas mientras el curso esté publicado** (rechazo con mensaje claro, sin opción de confirmar):
+- Crear, editar, eliminar y reordenar módulos.
+- Crear, editar, eliminar y reordenar lecciones.
+- Guardar el texto Markdown de una lección.
+- Subir, reemplazar y quitar el archivo de una lección.
+- Crear, editar, reordenar y eliminar preguntas.
+- Cambiar la configuración de evaluación (nota mínima, preguntas por intento).
 
-**Operaciones que solo avisan, sin bloquear:**
-- Reordenar módulos o lecciones. Aviso informativo con el número de inscritos activos; la operación procede sin segundo paso. El riesgo de fondo se elimina en §1.7, no con fricción aquí.
+**Permitidas siempre:**
+- **Despublicar** el curso. Es la vía para poder editar y conserva su advertencia sobre inscritos.
+- **Archivar** el curso. Conserva su confirmación actual: el curso debe estar despublicado, sin constancias, y si hay inscritos activos pide confirmación explícita.
 
-**Comportamiento de la guarda:**
+**Comportamiento de la guarda de contenido.**
 
-Antes de ejecutar una operación que la exige, el action consulta cuántos inscritos activos tiene el curso. Si hay al menos uno, **no ejecuta**: devuelve un resultado que la UI traduce en un diálogo indicando cuántos estudiantes se afectan y qué implica el cambio. La confirmación se pasa como parámetro explícito al reintentar (por ejemplo `{ confirmed: true }`).
+El action resuelve el `courseId` del recurso involucrado y consulta `courses.published`. Si `published = true`, retorna un rechazo con el mensaje:
 
-**La guarda vive en el servidor.** Un `confirm()` en el cliente no protege nada: el action puede invocarse por otras vías.
+> "El curso está publicado. Para modificar su contenido, despublícalo primero desde el panel del curso."
+
+No hay parámetro `confirmed`; el bloqueo es determinista. La guarda vive en el servidor porque un action puede invocarse por otras vías; **la UI complementa** deshabilitando controles y mostrando un banner en las pantallas de **módulos y lecciones** y de **evaluación**. El admin no debe poder intentarlo desde la interfaz.
 
 **Caso especial — despublicar (G5).** El mensaje debe decir explícitamente que el curso dejará de ser visible para los inscritos y que **su progreso se conserva**. Es la confusión exacta del incidente del 07-ago.
-
-**Caso especial — banco de preguntas.** Si hay intentos en curso, advertir que la evaluación dejará de ser comparable entre quienes la presentaron antes y después.
 
 ### 4. Desbloqueo manual de estudiante (F8)
 
@@ -201,14 +199,14 @@ Corregir para que el número de preguntas sorteadas provenga de la configuració
 6. Desde la lista se accede a la ficha individual.
 7. La ficha muestra cursos, progreso, intentos y constancias de esa persona.
 
-**Salvaguardas**
-8. Eliminar lección o módulo con inscritos activos exige confirmación indicando cuántos se afectan.
-9. Despublicar con inscritos activos advierte que dejará de ser visible y que el progreso se conserva.
-10. Archivar un curso con inscritos activos exige confirmación.
-11. Modificar el banco de preguntas con intentos en curso advierte sobre comparabilidad.
-12. Reordenar **avisa** con el número de afectados pero **no** exige segundo paso.
-13. Las operaciones seguras no piden confirmación.
-14. La guarda opera en servidor: invocar el action sin confirmación explícita no ejecuta la operación.
+**Salvaguardas (v1.2)**
+8. Con el curso **publicado**, todas las mutaciones de contenido (crear/editar/eliminar/reordenar módulos y lecciones; guardar texto Markdown; subir/reemplazar/quitar archivo; crear/editar/reordenar/eliminar preguntas; cambiar configuración de evaluación) **son rechazadas** por el servidor con un mensaje claro que indica que hay que despublicar primero. No hay opción de confirmar.
+9. Con el curso **publicado**, la UI de módulos, lecciones y evaluación aparece con controles deshabilitados y un banner explicando por qué. El admin no puede intentar la mutación desde la interfaz.
+10. Con el curso **en borrador**, las mismas mutaciones de contenido se ejecutan sin pedir confirmación y sin condicionantes por conteo de inscritos.
+11. **Despublicar** el curso está permitido siempre; con inscritos activos advierte explícitamente que dejará de ser visible y que **el progreso se conserva**.
+12. **Archivar** el curso está permitido siempre bajo sus condiciones actuales (borrador, sin constancias); con inscritos activos exige confirmación explícita.
+13. La guarda de publicación opera en el servidor: invocar el action de contenido con el curso publicado no ejecuta la operación, sin importar la ruta de invocación.
+14. Los helpers `countActiveEnrollments` y demás en `src/lib/enrollments-admin.ts` se conservan: siguen usándose por la vista de inscritos, la ficha del estudiante y el aviso al despublicar.
 
 **Desbloqueo**
 15. Un estudiante bloqueado se desbloquea desde su ficha, con confirmación.

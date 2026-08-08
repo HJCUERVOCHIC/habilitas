@@ -10,7 +10,7 @@ export default async function ModulosPage({ params }: { params: { slug: string }
   const admin = createAdminClient()
   const { data: course } = await admin
     .from('courses')
-    .select('id, title')
+    .select('id, title, published')
     .eq('slug', params.slug)
     .maybeSingle()
   if (!course) notFound()
@@ -49,7 +49,12 @@ export default async function ModulosPage({ params }: { params: { slug: string }
         ← {course.title}
       </Link>
       <h1 className="mb-6 mt-2 font-display text-display-md text-charcoal">Módulos y lecciones</h1>
-      <ModulesManager courseId={course.id} courseSlug={params.slug} modules={adminModules} />
+      <ModulesManager
+        courseId={course.id}
+        courseSlug={params.slug}
+        modules={adminModules}
+        courseIsPublished={course.published}
+      />
     </div>
   )
 }

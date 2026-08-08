@@ -49,6 +49,16 @@ describe('course-progress', () => {
     expect(isLessonAccessible(modules, 'l1', {})).toBe(true)
   })
 
+  it('una lección ya completada permanece accesible aunque la anterior no lo esté (§1.7)', () => {
+    // Simula el efecto de un reordenamiento: `l3` (última) fue completada por
+    // el estudiante antes de un reordenamiento que dejó `l2` sin completar.
+    // El estudiante debe poder volver a `l3` sin quedarse bloqueado.
+    expect(isLessonAccessible(modules, 'l3', completed('l1', 'l3'))).toBe(true)
+    // La cláusula NO habilita saltos: una lección aún no completada sigue
+    // dependiendo de la anterior en el orden natural.
+    expect(isLessonAccessible(modules, 'l2', completed('l3'))).toBe(false)
+  })
+
   it('estados de módulo', () => {
     expect(getModuleStatus(modules, 0, {})).toBe('in-progress')
     expect(getModuleStatus(modules, 0, completed('l1', 'l2'))).toBe('completed')

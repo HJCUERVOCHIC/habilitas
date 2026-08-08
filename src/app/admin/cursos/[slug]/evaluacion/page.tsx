@@ -14,7 +14,7 @@ export default async function EvaluacionPage({ params }: { params: { slug: strin
   const admin = createAdminClient()
   const { data: course } = await admin
     .from('courses')
-    .select('id, title, pass_score')
+    .select('id, title, pass_score, published')
     .eq('slug', params.slug)
     .maybeSingle()
   if (!course) notFound()
@@ -58,6 +58,8 @@ export default async function EvaluacionPage({ params }: { params: { slug: strin
       </h1>
       <EvaluationManager
         courseId={course.id}
+        courseSlug={params.slug}
+        courseIsPublished={course.published}
         evaluationId={evaluation?.id ?? null}
         questionsPerAttempt={evaluation?.questions_per_attempt ?? 10}
         passScore={course.pass_score}

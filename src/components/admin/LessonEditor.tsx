@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 
@@ -45,6 +46,8 @@ interface LessonForEditor {
 interface LessonEditorProps {
   lesson: LessonForEditor
   r2Configured: boolean
+  courseSlug: string
+  courseIsPublished: boolean
 }
 
 /**
@@ -52,19 +55,61 @@ interface LessonEditorProps {
  *   - body_md con tabs Editar / Vista previa (preview = render real del estudiante).
  *   - Carga directa a R2 vía URL PUT prefirmada (cuando el tipo lo requiere).
  *   - Reemplazar o quitar el medio actual.
+ *
+ * SPEC-INSCRIPCIONES-SEGUIMIENTO §1.3 v1.2: si el curso está publicado el
+ * editor queda en modo lectura con un banner. El servidor rechaza igual si
+ * alguien salta la UI (guarda en `updateLessonBody`, `confirmLessonUpload`,
+ * `clearLessonContent`).
  */
-export function LessonEditor({ lesson, r2Configured }: LessonEditorProps) {
+export function LessonEditor({
+  lesson,
+  r2Configured,
+  courseSlug,
+  courseIsPublished,
+}: LessonEditorProps) {
   return (
     <div className="space-y-8">
-      <BodyEditor lessonId={lesson.id} initial={lesson.body_md} />
+      {courseIsPublished && <PublishedLockBanner slug={courseSlug} />}
+      <BodyEditor lessonId={lesson.id} initial={lesson.body_md} locked={courseIsPublished} />
       {lesson.content_type !== 'text' && (
-        <MediaSection lesson={lesson} r2Configured={r2Configured} />
+        <MediaSection
+          lesson={lesson}
+          r2Configured={r2Configured}
+          locked={courseIsPublished}
+        />
       )}
     </div>
   )
 }
 
-function BodyEditor({ lessonId, initial }: { lessonId: string; initial: string }) {
+function PublishedLockBanner({ slug }: { slug: string }) {
+  return (
+    <div
+      role="status"
+      className="rounded-lg border border-amber/40 bg-amber-pale/60 p-4 text-sm text-ink-main"
+    >
+      <p className="font-semibold text-amber">Curso publicado · edición bloqueada</p>
+      <p className="mt-1 text-xs text-ink-soft">
+        Un curso publicado no admite modificaciones. Para editar el texto o el archivo de
+        esta lección, despublica primero el curso desde{' '}
+        <Link href={`/admin/cursos/${slug}`} className="text-teal underline">
+          su panel
+        </Link>
+        . El progreso de los inscritos se conserva.
+      </p>
+    </div>
+  )
+}
+
+function BodyEditor({
+  lessonId,
+  initial,
+  locked,
+}: {
+  lessonId: string
+  initial: string
+  locked: boolean
+}) {
   const router = useRouter()
   const [text, setText] = useState(initial)
   const [tab, setTab] = useState<'edit' | 'preview'>('edit')
@@ -110,6 +155,7 @@ function BodyEditor({ lessonId, initial }: { lessonId: string; initial: string }
           value={text}
           onChange={(e) => setText(e.target.value)}
           placeholder="Escribe el contenido en Markdown. Acepta encabezados (#), listas, **negrita**, [enlaces](url)…"
+          disabled={locked}
         />
       ) : (
         <div className="min-h-[200px] rounded-md border border-border bg-mist p-4">
@@ -124,7 +170,7 @@ function BodyEditor({ lessonId, initial }: { lessonId: string; initial: string }
       )}
 
       <div className="mt-4 flex items-center gap-3">
-        <Button variant="primary" size="sm" onClick={save} disabled={busy}>
+        <Button variant="primary" size="sm" onClick={save} disabled={busy || locked}>
           {busy ? 'Guardando…' : 'Guardar texto'}
         </Button>
         {status === 'saved' && <span className="text-xs text-green-ok">✓ Guardado</span>}
@@ -137,9 +183,11 @@ function BodyEditor({ lessonId, initial }: { lessonId: string; initial: string }
 function MediaSection({
   lesson,
   r2Configured,
+  locked,
 }: {
   lesson: LessonForEditor
   r2Configured: boolean
+  locked: boolean
 }) {
   const router = useRouter()
   const [busy, setBusy] = useState(false)
@@ -276,8 +324,8 @@ function MediaSection({
             <button
               type="button"
               onClick={handleRemove}
-              disabled={busy}
-              className="text-xs text-red-err hover:underline"
+              disabled={busy || locked}
+              className="text-xs text-red-err hover:underline disabled:cursor-not-allowed disabled:opacity-40"
             >
               Quitar archivo
             </button>
@@ -296,7 +344,7 @@ function MediaSection({
         <input
           type="file"
           accept={accept}
-          disabled={busy || !r2Configured}
+          disabled={busy || !r2Configured || locked}
           onChange={(e) => {
             const f = e.target.files?.[0]
             if (f) {

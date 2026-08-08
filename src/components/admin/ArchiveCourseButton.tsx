@@ -25,7 +25,17 @@ export function ArchiveCourseButton({ courseId, title }: { courseId: string; tit
     }
     setBusy(true)
     setError('')
-    const res = await archiveCourse(courseId)
+    let res = await archiveCourse(courseId)
+    if (!res.ok && res.requiresConfirmation) {
+      const activeCount = res.activeCount ?? 0
+      const message =
+        `Este curso tiene ${activeCount} estudiante(s) activo(s). Archivarlo los dejará sin acceso al reproductor (los datos se conservan y podrás restaurar el curso).\n\n¿Continuar?`
+      if (!window.confirm(message)) {
+        setBusy(false)
+        return
+      }
+      res = await archiveCourse(courseId, { confirmed: true })
+    }
     setBusy(false)
     if (res.ok) {
       router.push('/admin/cursos')

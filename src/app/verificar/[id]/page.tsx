@@ -6,8 +6,10 @@ import { CopyLinkButton } from '@/components/cert/CopyLinkButton'
 import { VerifyBanner } from '@/components/cert/VerifyBanner'
 import { ComplianceNotice } from '@/components/compliance/ComplianceNotice'
 import { Button } from '@/components/ui/Button'
+import { PublicShell } from '@/components/layout/PublicShell'
 import { VerifyTopbar } from '@/components/layout/VerifyTopbar'
 import { getCertStatus } from '@/lib/cert-states'
+import { getSessionAndRole } from '@/lib/require-admin'
 import { createClient } from '@/lib/supabase/server'
 import type { CertCourse } from '@/types/cert'
 import Link from 'next/link'
@@ -25,12 +27,20 @@ export default async function VerificarPage({ params }: { params: { id: string }
   // certificates; no joins en vivo de datos del usuario o el instructor.
   const { data: cert } = await supabase.rpc('get_certificate', { p_cert_id: params.id })
 
+  // Sesión para adaptar el shell y el enlace de retorno. Esto NO cambia
+  // qué se muestra del certificado (la verificación pública no expone datos
+  // adicionales por tener sesión); solo la navegación de contexto:
+  //   - estudiante autenticado → AppNav + "Mis cursos" → /mis-cursos.
+  //   - visitante anónimo o admin → VerifyTopbar + "Ver cursos" → catálogo.
+  const { user, isAdmin } = await getSessionAndRole()
+  const isStudent = Boolean(user) && !isAdmin
+
   // La función devuelve un composite con campos null cuando no hay match;
   // tratamos cert_id ausente como "no encontrado".
   if (!cert || !cert.cert_id) {
     return (
       <>
-        <VerifyTopbar />
+        <PublicShell fallback={<VerifyTopbar />} />
         <main className="bg-sand">
           <CertNotFound id={params.id} />
         </main>
@@ -38,12 +48,23 @@ export default async function VerificarPage({ params }: { params: { id: string }
     )
   }
 
-  // La "habilidad" es el título del curso (consulta separada, bien tipada).
-  const { data: course } = await supabase
+  // La "habilidad" es el título del curso. Preferimos el SNAPSHOT guardado
+  // al emitir (SPEC-INSCRIPCIONES-SEGUIMIENTO §1.6, H5): la constancia es
+  // auditable con independencia de cambios posteriores en el curso vivo. La
+  // categoría no está en el snapshot (no se usa como campo legal) y se
+  // consulta viva sin bloquear el render si el curso fue archivado.
+  const { data: liveCourse } = await supabase
     .from('courses')
     .select('title, category')
     .eq('id', cert.course_id)
     .maybeSingle<CertCourse>()
+
+  const course: CertCourse | null = cert.course_title_snapshot
+    ? {
+        title: cert.course_title_snapshot,
+        category: liveCourse?.category ?? '',
+      }
+    : liveCourse
 
   const status = getCertStatus(cert)
 
@@ -57,7 +78,7 @@ export default async function VerificarPage({ params }: { params: { id: string }
 
   return (
     <>
-      <VerifyTopbar />
+      <PublicShell fallback={<VerifyTopbar />} />
       <main className="bg-sand">
         <div className="mx-auto max-w-3xl space-y-6 px-6 py-12">
           <VerifyBanner status={status} />
@@ -72,7 +93,11 @@ export default async function VerificarPage({ params }: { params: { id: string }
           <div className="flex items-center justify-center gap-4">
             <CopyLinkButton url={verifyUrl} />
             <Button asChild variant="ghost">
-              <Link href="/certificaciones">Ver cursos</Link>
+              {isStudent ? (
+                <Link href="/mis-cursos">Mis cursos</Link>
+              ) : (
+                <Link href="/certificaciones">Ver cursos</Link>
+              )}
             </Button>
           </div>
         </div>
